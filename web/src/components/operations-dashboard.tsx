@@ -153,25 +153,38 @@ export function OperationsDashboard() {
   const [isActing, setIsActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async () => {
     const response = await fetch(`${API_URL}/operations/dashboard`, {
       cache: "no-store",
     });
     if (!response.ok) {
       throw new Error("The operations API did not return a dashboard.");
     }
-    setDashboard((await response.json()) as Dashboard);
+    return (await response.json()) as Dashboard;
   }, []);
 
   useEffect(() => {
-    loadDashboard()
-      .catch(() =>
-        setError(
-          "The dashboard could not reach the .NET API. Start the API on port 5080 and try again.",
-        ),
-      )
-      .finally(() => setIsLoading(false));
-  }, [loadDashboard]);
+    let cancelled = false;
+
+    void fetchDashboard()
+      .then((snapshot) => {
+        if (!cancelled) setDashboard(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(
+            "The dashboard could not reach the .NET API. Start the API on port 5080 and try again.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchDashboard]);
 
   const primaryIncident = dashboard?.incidents[0];
   const primaryAsset = useMemo(
@@ -188,7 +201,7 @@ export function OperationsDashboard() {
       if (!response.ok) {
         throw new Error("The requested operation was not completed.");
       }
-      await loadDashboard();
+      setDashboard(await fetchDashboard());
     } catch (actionError) {
       setError(
         actionError instanceof Error
