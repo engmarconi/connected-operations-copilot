@@ -1,0 +1,26 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+
+# Node
+node_modules/
+**/node_modules/
+**/.next/
+**/out/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+
+# Test and coverage output
+coverage/
+TestResults/
