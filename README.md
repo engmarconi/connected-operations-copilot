@@ -1,10 +1,16 @@
 # Connected Operations Copilot
 
+[![CI](https://github.com/engmarconi/connected-operations-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/engmarconi/connected-operations-copilot/actions/workflows/ci.yml)
+
 Evidence-based incident diagnostics for fleet and connected-device operations.
 
 This public portfolio project demonstrates how deterministic operational systems can use AI safely: rules open incidents, approved evidence supports a diagnosis, and a person must approve every proposed action.
 
 The repository uses synthetic data only. It contains no DrivoX, McShippers, iSmart Home, employer, or customer data.
+
+## See it in action
+
+![Connected Operations Copilot showing an evidence-backed incident diagnosis with cited runbooks and a human approval gate](docs/assets/connected-operations-dashboard.png)
 
 ## Working vertical slice
 
