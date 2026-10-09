@@ -21,7 +21,7 @@ public sealed partial class LocalRunbookRetriever : IRunbookRetriever
     {
     }
 
-    public LocalRunbookRetriever(IEnumerable<RunbookChunk> chunks)
+    internal LocalRunbookRetriever(IEnumerable<RunbookChunk> chunks)
     {
         _chunks = chunks.ToArray();
         if (_chunks.Count is 0)
