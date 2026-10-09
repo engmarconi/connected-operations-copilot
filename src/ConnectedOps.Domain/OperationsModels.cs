@@ -59,6 +59,13 @@ public sealed record RunbookCitation(
     string Section,
     string Excerpt);
 
+public sealed record RunbookChunk(
+    string DocumentId,
+    string Title,
+    string Section,
+    string Content,
+    IReadOnlyList<string> Keywords);
+
 public sealed record DiagnosticAnalysis(
     string Summary,
     IReadOnlyList<string> ProbableCauses,

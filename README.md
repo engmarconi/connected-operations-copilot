@@ -4,7 +4,7 @@
 
 Evidence-based incident diagnostics for fleet and connected-device operations.
 
-This public portfolio project demonstrates how deterministic operational systems can use AI safely: rules open incidents, approved evidence supports a diagnosis, and a person must approve every proposed action.
+This public portfolio project demonstrates how deterministic operational systems can use AI safely: rules open incidents, versioned runbooks are retrieved as evidence, and a person must approve every proposed action.
 
 The repository uses synthetic data only. It contains no DrivoX, McShippers, iSmart Home, employer, or customer data.
 
@@ -18,16 +18,17 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 2. An operator runs the **Vehicle 12 offline** scenario.
 3. The deterministic simulator records rising latency, timeouts, and heartbeat loss.
 4. The incident engine opens a high-severity incident.
-5. A deterministic mock diagnostic provider returns:
+5. A local retrieval pipeline ranks versioned runbook sections against the incident telemetry.
+6. A deterministic mock diagnostic provider returns:
    - an evidence summary;
    - probable causes;
    - recommended checks;
-   - citations to approved runbooks;
+   - citations built from the retrieved runbook sections;
    - a confidence score.
-6. The provider proposes an operator notification.
-7. The notification is only simulated after explicit human approval.
+7. The provider proposes an operator notification.
+8. The notification is only simulated after explicit human approval.
 
-The mock provider keeps the demo runnable without credentials. Real model providers, RAG storage, and evaluation suites are roadmap items rather than implied current capabilities.
+The mock generator keeps the demo runnable without credentials. Retrieval is real but deliberately local and deterministic: Markdown runbooks are ingested from the repository, split by section, and ranked with weighted lexical relevance. Vector storage, model providers, and AI evaluation suites remain roadmap items rather than implied current capabilities.
 
 ## Architecture
 
@@ -36,8 +37,9 @@ flowchart LR
     Simulator[Synthetic asset simulator] --> API[ASP.NET Core API]
     API --> Rules[Deterministic incident rules]
     Rules --> Store[In-memory operations store]
-    Store --> Diagnostic[Mock evidence provider]
-    Runbooks[Approved runbook excerpts] --> Diagnostic
+    Store --> Diagnostic[Mock diagnostic generator]
+    Runbooks[Versioned Markdown runbooks] --> Retrieval[Local retrieval index]
+    Retrieval --> Diagnostic
     Diagnostic --> Review[Human review]
     Review --> Action[Simulated notification]
     API --> Web[Next.js operations dashboard]
@@ -50,7 +52,15 @@ flowchart LR
 - Next.js, TypeScript, Tailwind CSS, and shadcn/ui
 - xUnit
 - In-memory synthetic operations store
-- Deterministic mock diagnostic provider
+- Versioned Markdown runbook corpus
+- Deterministic ingestion and weighted lexical retrieval
+- Mock diagnostic generator with retrieved citations
+
+## Retrieval pipeline
+
+Runbooks under `runbooks/` are embedded into the backend at build time. On startup, the retrieval layer validates document metadata, chunks each document by section, and builds an in-memory index. Incident titles and telemetry become the retrieval query. Results are ranked by weighted matches across document keywords, titles, section names, and content, with at most one section returned per document.
+
+`IRunbookRetriever` keeps retrieval independent from diagnosis generation. The current local implementation can therefore be replaced by PostgreSQL and pgvector without changing the incident workflow or its human approval boundary.
 
 ## Run locally
 
@@ -91,15 +101,14 @@ npm run build
 
 - Incident creation is deterministic, not model-controlled.
 - The diagnostic provider has no direct database or device access.
-- Every diagnosis cites named runbook sections.
+- Diagnosis citations are created from retrieved, versioned runbook sections.
 - Proposed actions require explicit approval.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
 
 ## Roadmap
 
-- PostgreSQL and pgvector persistence
-- Runbook ingestion and retrieval
+- PostgreSQL and pgvector persistence for semantic retrieval
 - Schema-constrained Gemini and OpenAI providers
 - Read-only tool calling
 - Prompt-injection and missing-evidence tests

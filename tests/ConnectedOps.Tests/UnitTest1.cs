@@ -33,8 +33,10 @@ public sealed class OperationsServiceTests
 
         Assert.Equal("High", incident.Severity);
         Assert.NotNull(incident.Diagnosis);
-        Assert.Equal("mock-evidence-provider", incident.Diagnosis.Provider);
+        Assert.Equal("mock-generator/local-runbook-retrieval-v1", incident.Diagnosis.Provider);
         Assert.Equal(2, incident.Diagnosis.Citations.Count);
+        Assert.Equal("RB-CONN-001", incident.Diagnosis.Citations[0].DocumentId);
+        Assert.Equal("RB-APP-003", incident.Diagnosis.Citations[1].DocumentId);
         Assert.All(
             incident.Diagnosis.Citations,
             citation => Assert.False(string.IsNullOrWhiteSpace(citation.DocumentId)));
@@ -63,13 +65,71 @@ public sealed class OperationsServiceTests
         Assert.Contains("simulated", approved.ProposedAction.SimulatedResult);
     }
 
+    [Fact]
+    public async Task Retriever_ranks_relevant_runbooks_and_returns_one_chunk_per_document()
+    {
+        var retriever = new LocalRunbookRetriever();
+
+        var chunks = await retriever.RetrieveAsync(
+            "vehicle request latency timeout offline heartbeat driver reporting",
+            maxResults: 3,
+            CancellationToken.None);
+
+        Assert.Equal(6, retriever.Chunks.Count);
+        Assert.Equal("RB-CONN-001", chunks[0].DocumentId);
+        Assert.Equal("RB-APP-003", chunks[1].DocumentId);
+        Assert.Equal(chunks.Count, chunks.Select(chunk => chunk.DocumentId).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Diagnostic_citations_are_supplied_by_the_retriever()
+    {
+        var timeProvider = new StubTimeProvider(
+            new DateTimeOffset(2026, 10, 9, 19, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryOperationsStore(timeProvider);
+        var diagnosticService = new MockDiagnosticService(
+            new StubRunbookRetriever(),
+            timeProvider);
+        var service = new OperationsService(store, diagnosticService, timeProvider);
+
+        var incident = await service.RunOfflineScenarioAsync(
+            VehicleId,
+            CancellationToken.None);
+
+        var citation = Assert.Single(incident.Diagnosis!.Citations);
+        Assert.Equal("RB-TEST-001", citation.DocumentId);
+        Assert.Equal("Evidence supplied by the retrieval boundary.", citation.Excerpt);
+    }
+
     private static OperationsService CreateService()
     {
         var timeProvider = new StubTimeProvider(
             new DateTimeOffset(2026, 10, 9, 19, 0, 0, TimeSpan.Zero));
         var store = new InMemoryOperationsStore(timeProvider);
-        var diagnosticService = new MockDiagnosticService(timeProvider);
+        var diagnosticService = new MockDiagnosticService(
+            new LocalRunbookRetriever(),
+            timeProvider);
         return new OperationsService(store, diagnosticService, timeProvider);
+    }
+
+    private sealed class StubRunbookRetriever : IRunbookRetriever
+    {
+        public Task<IReadOnlyList<RunbookChunk>> RetrieveAsync(
+            string query,
+            int maxResults,
+            CancellationToken cancellationToken)
+        {
+            IReadOnlyList<RunbookChunk> result =
+            [
+                new(
+                    "RB-TEST-001",
+                    "Test Runbook",
+                    "1.0 — Test evidence",
+                    "Evidence supplied by the retrieval boundary.",
+                    ["test"])
+            ];
+            return Task.FromResult(result);
+        }
     }
 
     private sealed class StubTimeProvider(DateTimeOffset now) : TimeProvider

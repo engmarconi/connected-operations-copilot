@@ -22,6 +22,14 @@ public interface IDiagnosticService
         CancellationToken cancellationToken);
 }
 
+public interface IRunbookRetriever
+{
+    Task<IReadOnlyList<RunbookChunk>> RetrieveAsync(
+        string query,
+        int maxResults,
+        CancellationToken cancellationToken);
+}
+
 public sealed record DashboardSummary(
     int TotalAssets,
     int HealthyAssets,

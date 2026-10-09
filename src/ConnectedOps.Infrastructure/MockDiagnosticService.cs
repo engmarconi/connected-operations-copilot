@@ -3,9 +3,11 @@ using ConnectedOps.Domain;
 
 namespace ConnectedOps.Infrastructure;
 
-public sealed class MockDiagnosticService(TimeProvider timeProvider) : IDiagnosticService
+public sealed class MockDiagnosticService(
+    IRunbookRetriever runbookRetriever,
+    TimeProvider timeProvider) : IDiagnosticService
 {
-    public Task<(DiagnosticAnalysis Analysis, ProposedAction Action)> AnalyzeAsync(
+    public async Task<(DiagnosticAnalysis Analysis, ProposedAction Action)> AnalyzeAsync(
         Incident incident,
         ConnectedAsset asset,
         IReadOnlyList<TelemetryEvent> events,
@@ -16,6 +18,21 @@ public sealed class MockDiagnosticService(TimeProvider timeProvider) : IDiagnost
         var hasTimeout = events.Any(item => item.EventType is "request.timeout");
         var hasOfflineEvent = events.Any(item => item.EventType is "asset.offline");
         var confidence = hasTimeout && hasOfflineEvent ? 0.92m : 0.58m;
+        var query = string.Join(
+            ' ',
+            new[] { incident.Title, asset.Type.ToString() }
+                .Concat(events.Select(item => $"{item.EventType} {item.Message}")));
+        var retrievedChunks = await runbookRetriever.RetrieveAsync(
+            query,
+            maxResults: 2,
+            cancellationToken);
+        var citations = retrievedChunks
+            .Select(chunk => new RunbookCitation(
+                chunk.DocumentId,
+                chunk.Title,
+                chunk.Section,
+                chunk.Content))
+            .ToArray();
 
         var analysis = new DiagnosticAnalysis(
             $"{asset.Name} stopped reporting after request latency rose across several status updates. "
@@ -30,20 +47,9 @@ public sealed class MockDiagnosticService(TimeProvider timeProvider) : IDiagnost
                 "Ask the driver to reopen the application and verify session status.",
                 "Escalate to device inspection only if reporting does not recover."
             ],
-            [
-                new RunbookCitation(
-                    "RB-CONN-001",
-                    "Mobile Connectivity Runbook",
-                    "2.1 — Rising latency and heartbeat loss",
-                    "Repeated latency growth followed by timeouts usually indicates a degraded or lost network path."),
-                new RunbookCitation(
-                    "RB-APP-003",
-                    "Driver Application Recovery",
-                    "3.4 — Safe operator response",
-                    "Confirm connectivity and application session state before requesting a restart or device inspection.")
-            ],
+            citations,
             confidence,
-            "mock-evidence-provider",
+            "mock-generator/local-runbook-retrieval-v1",
             timeProvider.GetUtcNow());
 
         var action = new ProposedAction
@@ -53,6 +59,6 @@ public sealed class MockDiagnosticService(TimeProvider timeProvider) : IDiagnost
             Description = $"Notify operations to contact the driver assigned to {asset.Name} and run the connectivity checklist."
         };
 
-        return Task.FromResult((analysis, action));
+        return (analysis, action);
     }
 }

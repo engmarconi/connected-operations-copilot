@@ -9,6 +9,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IOperationsStore, InMemoryOperationsStore>();
+        services.AddSingleton<IRunbookRetriever, LocalRunbookRetriever>();
         services.AddSingleton<IDiagnosticService, MockDiagnosticService>();
         services.AddSingleton<OperationsService>();
 
