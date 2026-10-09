@@ -17,6 +17,20 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    services:
+      pgvector:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: connectedops_test
+          POSTGRES_USER: connectedops
+          POSTGRES_PASSWORD: connectedops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U connectedops -d connectedops_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,6 +48,8 @@ jobs:
 
       - name: Test
         run: dotnet test ConnectedOps.slnx --configuration Release --no-build
+        env:
+          RUNBOOK_PGVECTOR_TEST_CONNECTION: Host=127.0.0.1;Port=5432;Database=connectedops_test;Username=connectedops;Password=connectedops_test
 
   frontend:
     name: Frontend

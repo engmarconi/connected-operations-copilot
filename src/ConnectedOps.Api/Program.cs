@@ -4,7 +4,7 @@ using ConnectedOps.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddConnectedOperations();
+builder.Services.AddConnectedOperations(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());

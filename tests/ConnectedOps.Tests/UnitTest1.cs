@@ -101,6 +101,51 @@ public sealed class OperationsServiceTests
         Assert.Equal("Evidence supplied by the retrieval boundary.", citation.Excerpt);
     }
 
+    [Fact]
+    public async Task Feature_hash_embeddings_are_deterministic_and_normalized()
+    {
+        var service = new FeatureHashEmbeddingService();
+
+        var first = await service.EmbedAsync(
+            "mobile network latency timeout heartbeat",
+            CancellationToken.None);
+        var second = await service.EmbedAsync(
+            "mobile network latency timeout heartbeat",
+            CancellationToken.None);
+
+        Assert.Equal(256, first.Length);
+        Assert.Equal(first, second);
+        Assert.InRange(
+            Math.Sqrt(first.Sum(value => value * value)),
+            0.999,
+            1.001);
+    }
+
+    [Fact]
+    public async Task Pgvector_retriever_indexes_and_ranks_embedded_runbooks_when_configured()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(
+            "RUNBOOK_PGVECTOR_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        await using var retriever = new PgvectorRunbookRetriever(
+            connectionString,
+            new FeatureHashEmbeddingService());
+
+        var chunks = await retriever.RetrieveAsync(
+            "vehicle request latency timeout offline heartbeat driver reporting",
+            maxResults: 2,
+            CancellationToken.None);
+
+        Assert.Equal("pgvector-feature-hash-256-v1", retriever.ProviderId);
+        Assert.Equal(2, chunks.Count);
+        Assert.Equal("RB-CONN-001", chunks[0].DocumentId);
+        Assert.Contains(chunks, chunk => chunk.DocumentId is "RB-APP-003");
+    }
+
     private static OperationsService CreateService()
     {
         var timeProvider = new StubTimeProvider(
@@ -114,6 +159,8 @@ public sealed class OperationsServiceTests
 
     private sealed class StubRunbookRetriever : IRunbookRetriever
     {
+        public string ProviderId => "test-retrieval";
+
         public Task<IReadOnlyList<RunbookChunk>> RetrieveAsync(
             string query,
             int maxResults,

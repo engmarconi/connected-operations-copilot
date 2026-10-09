@@ -18,7 +18,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 2. An operator runs the **Vehicle 12 offline** scenario.
 3. The deterministic simulator records rising latency, timeouts, and heartbeat loss.
 4. The incident engine opens a high-severity incident.
-5. A local retrieval pipeline ranks versioned runbook sections against the incident telemetry.
+5. The configured retrieval pipeline ranks versioned runbook sections against the incident telemetry.
 6. A deterministic mock diagnostic provider returns:
    - an evidence summary;
    - probable causes;
@@ -28,7 +28,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 7. The provider proposes an operator notification.
 8. The notification is only simulated after explicit human approval.
 
-The mock generator keeps the demo runnable without credentials. Retrieval is real but deliberately local and deterministic: Markdown runbooks are ingested from the repository, split by section, and ranked with weighted lexical relevance. Vector storage, model providers, and AI evaluation suites remain roadmap items rather than implied current capabilities.
+The mock generator keeps the demo runnable without credentials. Retrieval supports two explicit modes: weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search using deterministic feature-hash embeddings. The feature hashes validate vector storage and retrieval architecture, but they are not presented as model-generated semantic embeddings.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ flowchart LR
     API --> Rules[Deterministic incident rules]
     Rules --> Store[In-memory operations store]
     Store --> Diagnostic[Mock diagnostic generator]
-    Runbooks[Versioned Markdown runbooks] --> Retrieval[Local retrieval index]
+    Runbooks[Versioned Markdown runbooks] --> Retrieval[Local index or pgvector]
     Retrieval --> Diagnostic
     Diagnostic --> Review[Human review]
     Review --> Action[Simulated notification]
@@ -54,13 +54,20 @@ flowchart LR
 - In-memory synthetic operations store
 - Versioned Markdown runbook corpus
 - Deterministic ingestion and weighted lexical retrieval
+- Optional PostgreSQL 17 and pgvector retrieval
+- Deterministic 256-dimension feature-hash embeddings
 - Mock diagnostic generator with retrieved citations
 
 ## Retrieval pipeline
 
-Runbooks under `runbooks/` are embedded into the backend at build time. On startup, the retrieval layer validates document metadata, chunks each document by section, and builds an in-memory index. Incident titles and telemetry become the retrieval query. Results are ranked by weighted matches across document keywords, titles, section names, and content, with at most one section returned per document.
+Runbooks under `runbooks/` are embedded into the backend at build time. The ingestion layer validates document metadata and chunks each document by section. Incident titles and telemetry become the retrieval query, with at most one section returned per document.
 
-`IRunbookRetriever` keeps retrieval independent from diagnosis generation. The current local implementation can therefore be replaced by PostgreSQL and pgvector without changing the incident workflow or its human approval boundary.
+`IRunbookRetriever` keeps retrieval independent from diagnosis generation:
+
+- **Local mode** builds an in-memory index and ranks weighted matches across keywords, titles, section names, and content.
+- **pgvector mode** creates the vector extension, synchronizes the embedded corpus transactionally, stores normalized 256-dimension feature hashes, creates an HNSW cosine index, and performs nearest-neighbor retrieval.
+
+`ITextEmbeddingService` is the replacement boundary for a future embedding model. The current feature hashing is deterministic, offline, and useful for validating the vector pipeline; it does not claim semantic understanding.
 
 ## Run locally
 
@@ -68,6 +75,7 @@ Requirements:
 
 - .NET SDK 10
 - Node.js 22+
+- Docker (only for pgvector mode)
 
 Start the API:
 
@@ -85,6 +93,32 @@ npm run dev -- --hostname 0.0.0.0 --port 43123
 ```
 
 Open <http://127.0.0.1:43123>.
+
+### Run with pgvector
+
+Start the database:
+
+```bash
+docker compose up -d pgvector
+```
+
+Set the backend configuration and start the API:
+
+```bash
+export RunbookRetrieval__Mode=pgvector
+export ConnectionStrings__Runbooks='Host=127.0.0.1;Port=54329;Database=connectedops;Username=connectedops;Password=connectedops_dev'
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+PowerShell:
+
+```powershell
+$env:RunbookRetrieval__Mode = "pgvector"
+$env:ConnectionStrings__Runbooks = "Host=127.0.0.1;Port=54329;Database=connectedops;Username=connectedops;Password=connectedops_dev"
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+The database credentials are local demo values from `compose.yaml`. Local retrieval remains the default when these settings are absent.
 
 ## Verify
 
@@ -108,7 +142,7 @@ npm run build
 
 ## Roadmap
 
-- PostgreSQL and pgvector persistence for semantic retrieval
+- Model-generated semantic embeddings behind `ITextEmbeddingService`
 - Schema-constrained Gemini and OpenAI providers
 - Read-only tool calling
 - Prompt-injection and missing-evidence tests

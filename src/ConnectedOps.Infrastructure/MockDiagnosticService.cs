@@ -49,7 +49,7 @@ public sealed class MockDiagnosticService(
             ],
             citations,
             confidence,
-            "mock-generator/local-runbook-retrieval-v1",
+            $"mock-generator/{runbookRetriever.ProviderId}",
             timeProvider.GetUtcNow());
 
         var action = new ProposedAction

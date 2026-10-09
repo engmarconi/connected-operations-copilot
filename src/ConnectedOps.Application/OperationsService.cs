@@ -24,9 +24,21 @@ public interface IDiagnosticService
 
 public interface IRunbookRetriever
 {
+    string ProviderId { get; }
+
     Task<IReadOnlyList<RunbookChunk>> RetrieveAsync(
         string query,
         int maxResults,
+        CancellationToken cancellationToken);
+}
+
+public interface ITextEmbeddingService
+{
+    int Dimensions { get; }
+    string ModelId { get; }
+
+    Task<float[]> EmbedAsync(
+        string text,
         CancellationToken cancellationToken);
 }
 

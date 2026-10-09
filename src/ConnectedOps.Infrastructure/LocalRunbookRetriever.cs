@@ -31,6 +31,7 @@ public sealed partial class LocalRunbookRetriever : IRunbookRetriever
     }
 
     public IReadOnlyList<RunbookChunk> Chunks => _chunks;
+    public string ProviderId => "local-runbook-retrieval-v1";
 
     public Task<IReadOnlyList<RunbookChunk>> RetrieveAsync(
         string query,
@@ -84,7 +85,7 @@ public sealed partial class LocalRunbookRetriever : IRunbookRetriever
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<RunbookChunk> LoadEmbeddedRunbooks()
+    internal static IReadOnlyList<RunbookChunk> LoadEmbeddedRunbooks()
     {
         var assembly = typeof(LocalRunbookRetriever).Assembly;
         var resources = assembly.GetManifestResourceNames()
