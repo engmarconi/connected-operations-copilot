@@ -10,7 +10,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 
 ## See it in action
 
-![Connected Operations Copilot showing retrieved runbook evidence and a human approval gate](docs/assets/retrieved-runbook-evidence.png)
+![Connected Operations Copilot showing audited read-only tool activity, retrieved runbook evidence, and a human approval gate](docs/assets/read-only-tool-activity.png)
 
 ## Working vertical slice
 
