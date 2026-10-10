@@ -217,6 +217,80 @@ public sealed class GeminiDiagnosticServiceTests
         Assert.Equal("gemini/gemini-test", audit.Caller);
     }
 
+    [Fact]
+    public async Task Interactions_client_allows_fleet_comparison_for_incident_asset()
+    {
+        var responseDraft = ValidDraft("E1");
+        var requests = new List<string>();
+        var handler = new StubHttpMessageHandler(async request =>
+        {
+            requests.Add(await request.Content!.ReadAsStringAsync());
+            return requests.Count is 1
+                ? JsonResponse(new
+                {
+                    status = "requires_action",
+                    steps = new[]
+                    {
+                        new
+                        {
+                            type = "function_call",
+                            id = "fc_fleet",
+                            name = "fleet-comparison",
+                            arguments = new
+                            {
+                                assetId = VehicleId,
+                                limit = 3
+                            }
+                        }
+                    }
+                })
+                : JsonResponse(new
+                {
+                    status = "completed",
+                    steps = new[]
+                    {
+                        new
+                        {
+                            type = "model_output",
+                            content = new[]
+                            {
+                                new
+                                {
+                                    type = "text",
+                                    text = JsonSerializer.Serialize(responseDraft)
+                                }
+                            }
+                        }
+                    }
+                });
+        });
+        var (toolService, _) = CreateToolService();
+        var client = new GeminiInteractionsClient(
+            new HttpClient(handler),
+            Options(),
+            toolService);
+
+        var result = await client.GenerateAsync(
+            "diagnose using E1",
+            VehicleId,
+            CancellationToken.None);
+
+        Assert.Equal(responseDraft.Summary, result.Summary);
+        var audit = Assert.Single(toolService.GetAuditTrail());
+        Assert.True(audit.Succeeded);
+        Assert.Equal("fleet-comparison", audit.ToolName);
+        using var firstRequest = JsonDocument.Parse(requests[0]);
+        var toolNames = firstRequest.RootElement
+            .GetProperty("tools")
+            .EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString()!)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            ["fleet-comparison", "incident-history", "recent-asset-telemetry"],
+            toolNames);
+    }
+
     [Theory]
     [InlineData(
         "delete-asset",
@@ -224,6 +298,10 @@ public sealed class GeminiDiagnosticServiceTests
         "not allowed")]
     [InlineData(
         "recent-asset-telemetry",
+        "22222222-2222-2222-2222-222222222222",
+        "different asset")]
+    [InlineData(
+        "fleet-comparison",
         "22222222-2222-2222-2222-222222222222",
         "different asset")]
     public async Task Interactions_client_rejects_out_of_policy_tool_calls(
@@ -293,7 +371,11 @@ public sealed class GeminiDiagnosticServiceTests
         var timeProvider = new StubTimeProvider();
         var store = new InMemoryOperationsStore(timeProvider);
         var service = new OperationsToolService(
-            [new RecentAssetTelemetryTool(store)],
+            [
+                new RecentAssetTelemetryTool(store),
+                new FleetComparisonTool(store),
+                new IncidentHistoryTool(store)
+            ],
             new InMemoryToolAuditStore(),
             timeProvider);
         return (service, store);

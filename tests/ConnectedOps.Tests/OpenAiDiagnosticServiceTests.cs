@@ -306,7 +306,11 @@ public sealed class OpenAiDiagnosticServiceTests
         var timeProvider = new StubTimeProvider();
         var store = new InMemoryOperationsStore(timeProvider);
         var service = new OperationsToolService(
-            [new RecentAssetTelemetryTool(store)],
+            [
+                new RecentAssetTelemetryTool(store),
+                new FleetComparisonTool(store),
+                new IncidentHistoryTool(store)
+            ],
             new InMemoryToolAuditStore(),
             timeProvider);
         return (service, store);

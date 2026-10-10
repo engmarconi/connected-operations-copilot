@@ -64,7 +64,7 @@ flowchart LR
 - Optional OpenAI schema-constrained diagnostic provider
 - Server-side citation validation and mapping
 - Versioned offline evaluation dataset and scoring CLI
-- Schema-validated read-only tool registry with audit records
+- Schema-validated read-only tool registry with telemetry, fleet comparison, and incident history tools
 
 ## Retrieval pipeline
 
@@ -205,11 +205,17 @@ $env:Diagnostics__OpenAI__Model = "gpt-4o-mini"
 dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
 ```
 
-The OpenAI provider uses Chat Completions with `response_format` set to a strict `json_schema`. Like Gemini, it receives untrusted telemetry and retrieved runbook excerpts, may make one allowlisted `recent-asset-telemetry` call for the incident asset, and can cite only server-issued evidence keys such as `E1`. Fabricated keys, missing evidence, cross-asset tool calls, and extra tool rounds fail closed with a safe `502`.
+The OpenAI provider uses Chat Completions with `response_format` set to a strict `json_schema`. Like Gemini, it receives untrusted telemetry and retrieved runbook excerpts, may make one allowlisted read-only tool call for the incident asset, and can cite only server-issued evidence keys such as `E1`. Fabricated keys, missing evidence, cross-asset tool calls, and extra tool rounds fail closed with a safe `502`.
 
 ## Read-only operations tools
 
-The first tool, `recent-asset-telemetry`, returns at most 20 recent synthetic events for one asset. The generic registry rejects unknown arguments, enforces a two-second timeout, accepts read-only tools only, and records success or failure without storing telemetry payloads in the audit summary.
+Three audited tools are registered:
+
+- `recent-asset-telemetry` returns at most 20 recent synthetic events for one asset.
+- `fleet-comparison` compares one asset's health with location peers and the wider synthetic fleet.
+- `incident-history` returns recent incidents for one asset with status and diagnosis presence only, not full diagnosis payloads.
+
+The generic registry rejects unknown arguments, enforces a two-second timeout, accepts read-only tools only, and records success or failure without storing telemetry payloads in the audit summary.
 
 Discover available tools:
 
@@ -230,13 +236,39 @@ curl -X POST http://127.0.0.1:5080/api/tools/recent-asset-telemetry \
   }'
 ```
 
+Compare the offline vehicle with peers:
+
+```bash
+curl -X POST http://127.0.0.1:5080/api/tools/fleet-comparison \
+  -H "Content-Type: application/json" \
+  -d '{
+    "arguments": {
+      "assetId": "11111111-1111-1111-1111-111111111111",
+      "limit": 3
+    }
+  }'
+```
+
+Inspect recent incidents for the same asset:
+
+```bash
+curl -X POST http://127.0.0.1:5080/api/tools/incident-history \
+  -H "Content-Type: application/json" \
+  -d '{
+    "arguments": {
+      "assetId": "11111111-1111-1111-1111-111111111111",
+      "limit": 5
+    }
+  }'
+```
+
 Inspect the bounded audit trail:
 
 ```bash
 curl "http://127.0.0.1:5080/api/tools/audit?limit=20"
 ```
 
-Gemini can request this tool only for the asset in the current incident and at most once per diagnosis. Unknown tools, cross-asset requests, malformed arguments, repeated calls, timeouts, and oversized results fail closed. Tool executions and policy rejections are both visible in the audit trail with server-controlled caller labels such as `gemini/gemini-3.8-flash` or `operator-api`.
+Gemini and OpenAI may request one allowlisted tool per diagnosis, and only for the asset in the current incident. Unknown tools, cross-asset requests, malformed arguments, repeated calls, timeouts, and oversized results fail closed. Tool executions and policy rejections are both visible in the audit trail with server-controlled caller labels such as `gemini/gemini-3.8-flash`, `openai/gpt-4o-mini`, or `operator-api`.
 
 The dashboard renders the five most recent audit records, including status, tool name, trusted caller label, duration, safe summary, and timestamp. Raw telemetry payloads and model prompts are not copied into audit summaries.
 
@@ -287,7 +319,6 @@ npm run build
 
 ## Roadmap
 
-- Additional audited tools for fleet comparison and incident history
 - Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs
 - Authentication and role-based approvals

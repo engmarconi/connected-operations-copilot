@@ -14,6 +14,8 @@ public static class DependencyInjection
         services.AddSingleton<IOperationsStore, InMemoryOperationsStore>();
         services.AddSingleton<IToolAuditStore, InMemoryToolAuditStore>();
         services.AddSingleton<IReadOnlyOperationsTool, RecentAssetTelemetryTool>();
+        services.AddSingleton<IReadOnlyOperationsTool, FleetComparisonTool>();
+        services.AddSingleton<IReadOnlyOperationsTool, IncidentHistoryTool>();
         services.AddSingleton<OperationsToolService>();
         AddRunbookRetrieval(services, configuration);
         AddDiagnosticProvider(services, configuration);
