@@ -40,6 +40,8 @@ flowchart LR
     Store --> Diagnostic[Mock or Gemini diagnostics]
     Runbooks[Versioned Markdown runbooks] --> Retrieval[Local index or pgvector]
     Retrieval --> Diagnostic
+    Diagnostic --> Tools[Audited read-only tool registry]
+    Tools --> Store
     Diagnostic --> Review[Human review]
     Review --> Action[Simulated notification]
     API --> Web[Next.js operations dashboard]
@@ -146,6 +148,8 @@ dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
 
 The Gemini provider uses `store: false` and requests JSON constrained by an explicit diagnostic schema. The model receives untrusted telemetry and retrieved runbook excerpts, but it can cite only server-issued evidence keys such as `E1`. The server rejects missing or fabricated keys and builds citation titles, sections, and excerpts from its own retrieved data. Proposed actions remain deterministic, simulated, and approval-gated.
 
+Gemini may make one stateless function call to the allowlisted telemetry tool. The server preserves signed model steps, validates the requested asset against the current incident, executes through the same audited registry, limits the returned JSON to 16,000 characters, and rejects additional tool rounds.
+
 There is no silent runtime fallback from Gemini to mock output: provider failures return a safe `502` response so operators can distinguish model failure from a real diagnosis. Remove the Gemini settings or select `mock` to use the credential-free provider.
 
 ## Read-only operations tools
@@ -178,7 +182,7 @@ Inspect the bounded audit trail:
 curl "http://127.0.0.1:5080/api/tools/audit?limit=20"
 ```
 
-This step establishes and tests the safe execution boundary. Gemini does not call tools yet; model function calling remains a separate roadmap stage.
+Gemini can request this tool only for the asset in the current incident and at most once per diagnosis. Unknown tools, cross-asset requests, malformed arguments, repeated calls, timeouts, and oversized results fail closed. Tool executions and policy rejections are both visible in the audit trail with caller identity such as `gemini/gemini-3.8-flash`.
 
 ## Evaluations
 
@@ -216,6 +220,7 @@ npm run build
 - Diagnosis citations are created from retrieved, versioned runbook sections.
 - Model-provided citation keys are validated against server-retrieved evidence.
 - Registered operations tools are read-only, bounded, timed, and audited.
+- Gemini tool calls are allowlisted, incident-scoped, stateless, and limited to one round.
 - Proposed actions require explicit approval.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
@@ -224,7 +229,7 @@ npm run build
 
 - Model-generated semantic embeddings behind `ITextEmbeddingService`
 - Schema-constrained OpenAI provider
-- Gemini function calling through the audited read-only registry
+- Additional audited tools for fleet comparison and incident history
 - Prompt-injection and missing-evidence tests
 - Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs

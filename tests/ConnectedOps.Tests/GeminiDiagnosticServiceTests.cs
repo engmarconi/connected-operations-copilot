@@ -9,6 +9,8 @@ namespace ConnectedOps.Tests;
 
 public sealed class GeminiDiagnosticServiceTests
 {
+    private static readonly Guid VehicleId =
+        Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly DateTimeOffset Now =
         new(2026, 10, 10, 4, 0, 0, TimeSpan.Zero);
 
@@ -112,10 +114,12 @@ public sealed class GeminiDiagnosticServiceTests
         });
         var client = new GeminiInteractionsClient(
             new HttpClient(handler),
-            Options());
+            Options(),
+            CreateToolService().Service);
 
         var result = await client.GenerateAsync(
             "diagnose using E1",
+            VehicleId,
             CancellationToken.None);
 
         Assert.Equal("test-key", apiKey);
@@ -132,6 +136,136 @@ public sealed class GeminiDiagnosticServiceTests
                 .GetProperty("schema")
                 .GetProperty("properties")
                 .TryGetProperty("citationKeys", out _));
+    }
+
+    [Fact]
+    public async Task Interactions_client_executes_one_allowed_tool_and_resends_stateless_history()
+    {
+        var responseDraft = ValidDraft("E1");
+        var requests = new List<string>();
+        var handler = new StubHttpMessageHandler(async request =>
+        {
+            requests.Add(await request.Content!.ReadAsStringAsync());
+            return requests.Count is 1
+                ? JsonResponse(new
+                {
+                    status = "requires_action",
+                    steps = new object[]
+                    {
+                        new
+                        {
+                            type = "thought",
+                            signature = "signed-thought"
+                        },
+                        new
+                        {
+                            type = "function_call",
+                            id = "fc_1",
+                            name = "recent-asset-telemetry",
+                            arguments = new
+                            {
+                                assetId = VehicleId,
+                                limit = 2
+                            }
+                        }
+                    }
+                })
+                : JsonResponse(new
+                {
+                    status = "completed",
+                    steps = new[]
+                    {
+                        new
+                        {
+                            type = "model_output",
+                            content = new[]
+                            {
+                                new
+                                {
+                                    type = "text",
+                                    text = JsonSerializer.Serialize(responseDraft)
+                                }
+                            }
+                        }
+                    }
+                });
+        });
+        var (toolService, store) = CreateToolService();
+        store.CreateOfflineIncident(VehicleId, Now);
+        var client = new GeminiInteractionsClient(
+            new HttpClient(handler),
+            Options(),
+            toolService);
+
+        var result = await client.GenerateAsync(
+            "diagnose using E1",
+            VehicleId,
+            CancellationToken.None);
+
+        Assert.Equal(responseDraft.Summary, result.Summary);
+        Assert.Equal(2, requests.Count);
+        using var secondRequest = JsonDocument.Parse(requests[1]);
+        var history = secondRequest.RootElement.GetProperty("input");
+        Assert.Equal("user_input", history[0].GetProperty("type").GetString());
+        Assert.Equal("thought", history[1].GetProperty("type").GetString());
+        Assert.Equal("function_call", history[2].GetProperty("type").GetString());
+        Assert.Equal("function_result", history[3].GetProperty("type").GetString());
+        Assert.Equal("fc_1", history[3].GetProperty("call_id").GetString());
+
+        var audit = Assert.Single(toolService.GetAuditTrail());
+        Assert.True(audit.Succeeded);
+        Assert.Equal("gemini/gemini-test", audit.Caller);
+    }
+
+    [Theory]
+    [InlineData(
+        "delete-asset",
+        "11111111-1111-1111-1111-111111111111",
+        "not allowed")]
+    [InlineData(
+        "recent-asset-telemetry",
+        "22222222-2222-2222-2222-222222222222",
+        "different asset")]
+    public async Task Interactions_client_rejects_out_of_policy_tool_calls(
+        string toolName,
+        string requestedAssetId,
+        string expectedMessage)
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+            Task.FromResult(JsonResponse(new
+            {
+                status = "requires_action",
+                steps = new[]
+                {
+                    new
+                    {
+                        type = "function_call",
+                        id = "fc_blocked",
+                        name = toolName,
+                        arguments = new
+                        {
+                            assetId = requestedAssetId,
+                            limit = 2
+                        }
+                    }
+                }
+            })));
+        var (toolService, _) = CreateToolService();
+        var client = new GeminiInteractionsClient(
+            new HttpClient(handler),
+            Options(),
+            toolService);
+
+        var exception = await Assert.ThrowsAsync<DiagnosticProviderException>(
+            () => client.GenerateAsync(
+                "diagnose using E1",
+                VehicleId,
+                CancellationToken.None));
+
+        Assert.Contains(expectedMessage, exception.Message);
+        var audit = Assert.Single(toolService.GetAuditTrail());
+        Assert.False(audit.Succeeded);
+        Assert.Equal(toolName, audit.ToolName);
     }
 
     private static GeminiDiagnosticService CreateService(
@@ -153,6 +287,29 @@ public sealed class GeminiDiagnosticServiceTests
             new Uri("https://generativelanguage.googleapis.com/v1beta/interactions"));
     }
 
+    private static (OperationsToolService Service, InMemoryOperationsStore Store)
+        CreateToolService()
+    {
+        var timeProvider = new StubTimeProvider();
+        var store = new InMemoryOperationsStore(timeProvider);
+        var service = new OperationsToolService(
+            [new RecentAssetTelemetryTool(store)],
+            new InMemoryToolAuditStore(),
+            timeProvider);
+        return (service, store);
+    }
+
+    private static HttpResponseMessage JsonResponse(object value)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(value),
+                Encoding.UTF8,
+                "application/json")
+        };
+    }
+
     private static GeminiDiagnosticDraft ValidDraft(string citationKey)
     {
         return new GeminiDiagnosticDraft(
@@ -168,7 +325,7 @@ public sealed class GeminiDiagnosticServiceTests
     {
         var asset = new ConnectedAsset
         {
-            Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Id = VehicleId,
             Name = "Vehicle 12",
             Type = AssetType.Vehicle,
             Location = "Brighton"
@@ -237,6 +394,7 @@ public sealed class GeminiDiagnosticServiceTests
 
         public Task<GeminiDiagnosticDraft> GenerateAsync(
             string prompt,
+            Guid allowedAssetId,
             CancellationToken cancellationToken)
         {
             CallCount++;

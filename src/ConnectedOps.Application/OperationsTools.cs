@@ -109,13 +109,6 @@ public sealed class OperationsToolService
         string caller,
         CancellationToken cancellationToken)
     {
-        if (!_tools.TryGetValue(toolName, out var tool))
-        {
-            throw new OperationsToolException(
-                OperationsToolErrorKind.NotFound,
-                $"Read-only tool '{toolName}' was not found.");
-        }
-
         if (string.IsNullOrWhiteSpace(caller) || caller.Length > 100)
         {
             throw new OperationsToolException(
@@ -125,6 +118,21 @@ public sealed class OperationsToolService
 
         var startedAt = TimeProvider.GetUtcNow();
         var startedTimestamp = TimeProvider.GetTimestamp();
+        if (!_tools.TryGetValue(toolName, out var tool))
+        {
+            var message = $"Read-only tool '{toolName}' was not found.";
+            AppendAudit(
+                toolName,
+                caller,
+                startedAt,
+                startedTimestamp,
+                succeeded: false,
+                message);
+            throw new OperationsToolException(
+                OperationsToolErrorKind.NotFound,
+                message);
+        }
+
         using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         timeoutSource.CancelAfter(tool.Definition.TimeoutMilliseconds);
@@ -186,6 +194,30 @@ public sealed class OperationsToolService
                 $"Read-only tool '{toolName}' failed safely.",
                 exception);
         }
+    }
+
+    public void RecordRejectedAttempt(
+        string toolName,
+        string caller,
+        string summary)
+    {
+        var safeToolName = string.IsNullOrWhiteSpace(toolName)
+            ? "(missing)"
+            : toolName[..Math.Min(toolName.Length, 100)];
+        var safeCaller = string.IsNullOrWhiteSpace(caller)
+            ? "(unknown)"
+            : caller[..Math.Min(caller.Length, 100)];
+        var safeSummary = string.IsNullOrWhiteSpace(summary)
+            ? "Tool request was rejected by policy."
+            : summary[..Math.Min(summary.Length, 500)];
+        var startedAt = TimeProvider.GetUtcNow();
+        AppendAudit(
+            safeToolName,
+            safeCaller,
+            startedAt,
+            TimeProvider.GetTimestamp(),
+            succeeded: false,
+            safeSummary);
     }
 
     private void AppendAudit(
