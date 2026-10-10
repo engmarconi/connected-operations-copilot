@@ -68,7 +68,7 @@ flowchart LR
 
 ## Retrieval pipeline
 
-Runbooks under `runbooks/` are embedded into the backend at build time. The ingestion layer validates document metadata and chunks each document by section. The retrieval query is built from the incident title, asset type, and recognized telemetry categories (`request.slow`, `request.timeout`, and `asset.offline`). Free-text telemetry messages are untrusted and are excluded, so injected keywords cannot steer ranking. At most one section is returned per document.
+Runbooks under `runbooks/` are embedded into the backend at build time. The ingestion layer validates document metadata and chunks each document by section. The retrieval query is built from the incident title, asset type, and recognized telemetry categories (`request.slow`, `request.timeout`, `asset.offline`, `session.expired`, `device.power`, `device.enclosure`, and `sensor.fault`). Free-text telemetry messages are untrusted and are excluded, so injected keywords cannot steer ranking. At most one section is returned per document.
 
 `IRunbookRetriever` keeps retrieval independent from diagnosis generation:
 
@@ -274,7 +274,7 @@ The dashboard renders the five most recent audit records, including status, tool
 
 ## Evaluations
 
-The versioned dataset in `evals/cases.json` covers a full network outage, degraded reporting without a confirmed outage, prompt injection in telemetry text, keyword injection that tries to steer retrieval toward a hardware runbook, and an incident with no matching runbook. Each result is scored for:
+The versioned dataset in `evals/cases.json` covers network outages, degraded reporting, prompt and keyword injection, missing-evidence refusals, driver-app and payment-terminal incidents, session expiry, and hardware enclosure evidence across multiple synthetic assets. Each result is scored for:
 
 - required and forbidden citations;
 - confidence calibration;
@@ -319,7 +319,6 @@ npm run build
 
 ## Roadmap
 
-- Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs
 - Authentication and role-based approvals
 

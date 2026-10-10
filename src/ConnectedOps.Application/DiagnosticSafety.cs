@@ -12,7 +12,11 @@ public static class DiagnosticSafety
         {
             ["request.slow"] = "latency",
             ["request.timeout"] = "timeout",
-            ["asset.offline"] = "offline heartbeat"
+            ["asset.offline"] = "offline heartbeat",
+            ["session.expired"] = "application session",
+            ["device.power"] = "hardware power",
+            ["device.enclosure"] = "hardware enclosure",
+            ["sensor.fault"] = "sensor hardware"
         };
 
     public static string BuildRetrievalQuery(
