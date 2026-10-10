@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
@@ -24,6 +25,7 @@
     <ProjectReference Include="..\..\src\ConnectedOps.Domain\ConnectedOps.Domain.csproj" />
     <ProjectReference Include="..\..\src\ConnectedOps.Application\ConnectedOps.Application.csproj" />
     <ProjectReference Include="..\..\src\ConnectedOps.Infrastructure\ConnectedOps.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\ConnectedOps.Api\ConnectedOps.Api.csproj" />
     <ProjectReference Include="..\..\tools\ConnectedOps.Evals\ConnectedOps.Evals.csproj" />
   </ItemGroup>
 

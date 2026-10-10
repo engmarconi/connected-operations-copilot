@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json.Serialization;
 using ConnectedOps.Api;
 using ConnectedOps.Application;
@@ -6,6 +7,7 @@ using ConnectedOps.Infrastructure;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddConnectedOperationsObservability();
+builder.AddConnectedOperationsAuth();
 builder.Services.AddConnectedOperations(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -27,6 +29,8 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -42,8 +46,46 @@ app.MapGet("/health", () => Results.Ok(new
 
 var operations = app.MapGroup("/api");
 
-operations.MapGet("/operations/dashboard", (OperationsService service) =>
-    Results.Ok(service.GetDashboard()));
+operations.MapPost(
+    "/auth/login",
+    (LoginRequest request, IDemoUserDirectory users, IAuthTokenService tokens) =>
+    {
+        var user = users.Authenticate(request.Username, request.Password);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        return Results.Ok(tokens.IssueToken(user));
+    });
+
+operations.MapGet(
+    "/auth/me",
+    (ClaimsPrincipal principal, IDemoUserDirectory users) =>
+    {
+        var username = principal.Identity?.Name;
+        var user = username is null ? null : users.FindByUsername(username);
+        return user is null
+            ? Results.Unauthorized()
+            : Results.Ok(user);
+    }).RequireAuthorization();
+
+operations.MapGet(
+    "/auth/demo-users",
+    () => Results.Ok(new
+    {
+        users = DemoUserDirectory.ListUsers().Select(user => new
+        {
+            user.Username,
+            user.DisplayName,
+            user.Roles
+        })
+    }));
+
+operations.MapGet(
+    "/operations/dashboard",
+    (OperationsService service) => Results.Ok(service.GetDashboard()))
+    .RequireAuthorization();
 
 operations.MapPost(
     "/simulation/offline/{assetId:guid}",
@@ -65,13 +107,17 @@ operations.MapPost(
                 detail: exception.Message,
                 statusCode: StatusCodes.Status502BadGateway);
         }
-    });
+    }).RequireAuthorization(AuthPolicies.CanOperate);
 
-operations.MapPost("/simulation/reset", (OperationsService service) =>
-    Results.Ok(service.Reset()));
+operations.MapPost(
+    "/simulation/reset",
+    (OperationsService service) => Results.Ok(service.Reset()))
+    .RequireAuthorization(AuthPolicies.CanOperate);
 
-operations.MapGet("/tools", (OperationsToolService service) =>
-    Results.Ok(new { tools = service.GetDefinitions() }));
+operations.MapGet(
+    "/tools",
+    (OperationsToolService service) => Results.Ok(new { tools = service.GetDefinitions() }))
+    .RequireAuthorization();
 
 operations.MapGet(
     "/tools/audit",
@@ -88,22 +134,26 @@ operations.MapGet(
         {
             return ToolError(exception);
         }
-    });
+    }).RequireAuthorization();
 
 operations.MapPost(
     "/tools/{toolName}",
     async (
         string toolName,
         ToolExecutionRequest request,
+        ClaimsPrincipal principal,
         OperationsToolService service,
         CancellationToken cancellationToken) =>
     {
         try
         {
+            var caller = principal.Identity?.Name is { Length: > 0 } username
+                ? $"operator-api/{username}"
+                : "operator-api";
             var result = await service.ExecuteAsync(
                 toolName,
                 request.Arguments,
-                "operator-api",
+                caller,
                 cancellationToken);
             return Results.Ok(result);
         }
@@ -111,19 +161,18 @@ operations.MapPost(
         {
             return ToolError(exception);
         }
-    });
+    }).RequireAuthorization(AuthPolicies.CanOperate);
 
 operations.MapPost(
     "/incidents/{incidentId:guid}/approve-notification",
-    (Guid incidentId, ApproveActionRequest request, OperationsService service) =>
+    (Guid incidentId, ClaimsPrincipal principal, OperationsService service) =>
     {
         try
         {
-            var incident = service.ApproveNotification(
-                incidentId,
-                string.IsNullOrWhiteSpace(request.ApprovedBy)
-                    ? "Demo operator"
-                    : request.ApprovedBy.Trim());
+            var approvedBy = principal.FindFirstValue("name")
+                ?? principal.Identity?.Name
+                ?? "Unknown approver";
+            var incident = service.ApproveNotification(incidentId, approvedBy);
             return Results.Ok(incident);
         }
         catch (KeyNotFoundException exception)
@@ -134,7 +183,7 @@ operations.MapPost(
         {
             return Results.BadRequest(new { error = exception.Message });
         }
-    });
+    }).RequireAuthorization(AuthPolicies.CanApprove);
 
 static IResult ToolError(OperationsToolException exception)
 {
@@ -153,6 +202,7 @@ static IResult ToolError(OperationsToolException exception)
 
 app.Run();
 
-public sealed record ApproveActionRequest(string ApprovedBy);
 public sealed record ToolExecutionRequest(
     System.Text.Json.JsonElement Arguments);
+
+public partial class Program;

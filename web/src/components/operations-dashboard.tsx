@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Activity,
   AlertTriangle,
@@ -13,6 +20,7 @@ import {
   Network,
   Play,
   RefreshCw,
+  LogOut,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -33,6 +41,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:5080/api";
+const AUTH_STORAGE_KEY = "connectedops.auth";
 
 type HealthState = "Healthy" | "Warning" | "Offline";
 type IncidentStatus = "Open" | "ActionApproved" | "Resolved";
@@ -109,6 +118,59 @@ type ToolAuditRecord = {
 type DashboardView = Dashboard & {
   toolAudit: ToolAuditRecord[];
 };
+
+type AuthUser = {
+  username: string;
+  displayName: string;
+  roles: string[];
+};
+
+type AuthSession = {
+  accessToken: string;
+  expiresAt: string;
+  user: AuthUser;
+};
+
+const authListeners = new Set<() => void>();
+
+function emitAuthChange() {
+  for (const listener of authListeners) {
+    listener();
+  }
+}
+
+function subscribeAuth(listener: () => void) {
+  authListeners.add(listener);
+  return () => {
+    authListeners.delete(listener);
+  };
+}
+
+function readStoredAuth(): AuthSession | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as AuthSession;
+    if (!session.accessToken || !session.user?.username) return null;
+    if (Date.parse(session.expiresAt) <= Date.now()) {
+      window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredAuth(session: AuthSession | null) {
+  if (session) {
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  } else {
+    window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+  emitAuthChange();
+}
 
 function timeLabel(value: string) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -199,17 +261,58 @@ function DashboardSkeleton() {
 }
 
 export function OperationsDashboard() {
+  const auth = useSyncExternalStore(
+    subscribeAuth,
+    readStoredAuth,
+    () => null,
+  );
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("admin-demo");
   const [dashboard, setDashboard] = useState<DashboardView | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isActing, setIsActing] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actionInFlight = useRef(false);
 
+  const canOperate = !!auth?.user.roles.includes("Operator");
+  const canApprove = !!auth?.user.roles.includes("Approver");
+
+  const authHeaders = useCallback(
+    (extra?: HeadersInit): HeadersInit => {
+      const headers = new Headers(extra);
+      if (auth?.accessToken) {
+        headers.set("Authorization", `Bearer ${auth.accessToken}`);
+      }
+      return headers;
+    },
+    [auth],
+  );
+
+  const clearAuth = useCallback(() => {
+    writeStoredAuth(null);
+    setDashboard(null);
+    setIsLoading(false);
+  }, []);
+
   const fetchDashboard = useCallback(async () => {
+    if (!auth?.accessToken) {
+      throw new Error("Sign in required.");
+    }
     const [dashboardResponse, auditResponse] = await Promise.all([
-      fetch(`${API_URL}/operations/dashboard`, { cache: "no-store" }),
-      fetch(`${API_URL}/tools/audit?limit=5`, { cache: "no-store" }),
+      fetch(`${API_URL}/operations/dashboard`, {
+        cache: "no-store",
+        headers: authHeaders(),
+      }),
+      fetch(`${API_URL}/tools/audit?limit=5`, {
+        cache: "no-store",
+        headers: authHeaders(),
+      }),
     ]);
+    if (dashboardResponse.status === 401 || auditResponse.status === 401) {
+      clearAuth();
+      throw new Error("Your session expired. Sign in again.");
+    }
     if (!dashboardResponse.ok || !auditResponse.ok) {
       throw new Error("The operations API did not return a dashboard.");
     }
@@ -221,30 +324,46 @@ export function OperationsDashboard() {
       ...snapshot,
       toolAudit: audit.records,
     };
-  }, []);
+  }, [auth, authHeaders, clearAuth]);
 
   useEffect(() => {
+    if (!auth) {
+      return;
+    }
+
     let cancelled = false;
 
-    void fetchDashboard()
-      .then((snapshot) => {
-        if (!cancelled) setDashboard(snapshot);
-      })
-      .catch(() => {
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) {
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const snapshot = await fetchDashboard();
+        if (!cancelled) {
+          setDashboard(snapshot);
+        }
+      } catch (loadError) {
         if (!cancelled) {
           setError(
-            "The dashboard could not reach the .NET API. Start the API on port 5080 and try again.",
+            loadError instanceof Error
+              ? loadError.message
+              : "The dashboard could not reach the .NET API. Start the API on port 5080 and try again.",
           );
         }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard]);
+  }, [auth, fetchDashboard]);
 
   const primaryIncident = dashboard?.incidents[0];
   const primaryAsset = useMemo(
@@ -253,6 +372,31 @@ export function OperationsDashboard() {
     [dashboard, primaryIncident],
   );
 
+  async function login() {
+    setIsLoggingIn(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!response.ok) {
+        throw new Error("Invalid demo username or password.");
+      }
+      const session = (await response.json()) as AuthSession;
+      writeStoredAuth(session);
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : "Sign-in failed.",
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
   async function runAction(action: () => Promise<Response>) {
     if (actionInFlight.current) return;
     actionInFlight.current = true;
@@ -260,6 +404,15 @@ export function OperationsDashboard() {
     setError(null);
     try {
       const response = await action();
+      if (response.status === 401) {
+        clearAuth();
+        throw new Error("Your session expired. Sign in again.");
+      }
+      if (response.status === 403) {
+        throw new Error(
+          "Your account does not have permission for that action.",
+        );
+      }
       if (!response.ok) {
         const problem = (await response.json().catch(() => null)) as {
           detail?: string;
@@ -290,13 +443,17 @@ export function OperationsDashboard() {
     void runAction(() =>
       fetch(`${API_URL}/simulation/offline/${vehicle.id}`, {
         method: "POST",
+        headers: authHeaders(),
       }),
     );
   }
 
   function resetDemo() {
     void runAction(() =>
-      fetch(`${API_URL}/simulation/reset`, { method: "POST" }),
+      fetch(`${API_URL}/simulation/reset`, {
+        method: "POST",
+        headers: authHeaders(),
+      }),
     );
   }
 
@@ -304,16 +461,98 @@ export function OperationsDashboard() {
     void runAction(() =>
       fetch(`${API_URL}/incidents/${incidentId}/approve-notification`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approvedBy: "Demo operator" }),
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: "{}",
       }),
+    );
+  }
+
+  if (!auth) {
+    return (
+      <main className="min-h-screen bg-[#f4f6f3] text-[#17211b]">
+        <div className="border-b border-black/5 bg-[#102a20] text-white">
+          <div className="mx-auto flex max-w-[1480px] items-center justify-between px-5 py-3 sm:px-8">
+            <div className="flex items-center gap-3">
+              <div className="grid size-9 place-items-center rounded-xl bg-[#b9f66e] text-[#102a20]">
+                <Network className="size-5" strokeWidth={2.4} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold tracking-tight">
+                  ConnectedOps
+                </div>
+                <div className="text-[11px] text-white/55">
+                  Role-gated incident response
+                </div>
+              </div>
+            </div>
+            <Badge className="border-white/10 bg-white/7 text-white/80">
+              <span className="size-1.5 rounded-full bg-[#b9f66e]" />
+              Demo environment
+            </Badge>
+          </div>
+        </div>
+        <div className="mx-auto flex max-w-lg flex-col gap-5 px-5 py-16 sm:px-8">
+          <Card className="rounded-2xl border-black/5 bg-white shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-2xl tracking-tight">
+                Sign in to operate
+              </CardTitle>
+              <CardDescription>
+                Demo JWT accounts separate operators who run scenarios from
+                approvers who can release notifications.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <label className="block space-y-1.5 text-sm">
+                <span className="font-medium text-[#31453a]">Username</span>
+                <input
+                  className="w-full rounded-xl border border-black/10 bg-[#f7f9f6] px-3 py-2 outline-none ring-[#173f2e] focus:ring-2"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                />
+              </label>
+              <label className="block space-y-1.5 text-sm">
+                <span className="font-medium text-[#31453a]">Password</span>
+                <input
+                  type="password"
+                  className="w-full rounded-xl border border-black/10 bg-[#f7f9f6] px-3 py-2 outline-none ring-[#173f2e] focus:ring-2"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                />
+              </label>
+              {error && (
+                <Alert className="border-red-200 bg-red-50 text-red-900">
+                  <AlertTriangle />
+                  <AlertTitle>Sign-in failed</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              <Button
+                className="w-full bg-[#173f2e] text-white hover:bg-[#102a20]"
+                onClick={() => void login()}
+                disabled={isLoggingIn || !username || !password}
+              >
+                {isLoggingIn ? "Signing in…" : "Sign in"}
+              </Button>
+              <div className="rounded-xl bg-[#f1f9e8] p-3 text-xs leading-5 text-[#456039]">
+                <div className="font-semibold">Demo accounts</div>
+                <div>operator / operate-demo · Operator</div>
+                <div>approver / approve-demo · Approver</div>
+                <div>admin / admin-demo · Operator + Approver</div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
     );
   }
 
   return (
     <main className="min-h-screen bg-[#f4f6f3] text-[#17211b]">
       <div className="border-b border-black/5 bg-[#102a20] text-white">
-        <div className="mx-auto flex max-w-[1480px] items-center justify-between px-5 py-3 sm:px-8">
+        <div className="mx-auto flex max-w-[1480px] items-center justify-between gap-3 px-5 py-3 sm:px-8">
           <div className="flex items-center gap-3">
             <div className="grid size-9 place-items-center rounded-xl bg-[#b9f66e] text-[#102a20]">
               <Network className="size-5" strokeWidth={2.4} />
@@ -327,10 +566,28 @@ export function OperationsDashboard() {
               </div>
             </div>
           </div>
-          <Badge className="border-white/10 bg-white/7 text-white/80">
-            <span className="size-1.5 rounded-full bg-[#b9f66e]" />
-            Demo environment
-          </Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Badge className="border-white/10 bg-white/7 text-white/80">
+              {auth.user.displayName}
+            </Badge>
+            {auth.user.roles.map((role) => (
+              <Badge
+                key={role}
+                className="border-white/10 bg-white/7 text-white/80"
+              >
+                {role}
+              </Badge>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/15 bg-transparent text-white hover:bg-white/10"
+              onClick={clearAuth}
+            >
+              <LogOut className="size-3.5" />
+              Sign out
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -347,7 +604,7 @@ export function OperationsDashboard() {
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[#617067] sm:text-base">
               Deterministic rules open incidents. The diagnostic copilot reads
               telemetry and approved runbooks, then proposes a human-reviewed
-              response.
+              response. Approvals require the Approver role.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -355,7 +612,7 @@ export function OperationsDashboard() {
               variant="outline"
               className="border-black/10 bg-white"
               onClick={resetDemo}
-              disabled={isActing || isLoading}
+              disabled={isActing || isLoading || !canOperate}
             >
               <RefreshCw className={isActing ? "animate-spin" : ""} />
               Reset demo
@@ -363,7 +620,9 @@ export function OperationsDashboard() {
             <Button
               className="bg-[#173f2e] text-white hover:bg-[#102a20]"
               onClick={runOfflineScenario}
-              disabled={isActing || isLoading || !!primaryIncident}
+              disabled={
+                isActing || isLoading || !!primaryIncident || !canOperate
+              }
             >
               <Play className="fill-current" />
               Run offline scenario
@@ -675,7 +934,12 @@ export function OperationsDashboard() {
                               onClick={() =>
                                 approveNotification(primaryIncident.id)
                               }
-                              disabled={isActing}
+                              disabled={isActing || !canApprove}
+                              title={
+                                canApprove
+                                  ? undefined
+                                  : "Approver role required"
+                              }
                             >
                               Approve notification
                               <ChevronRight />
@@ -702,7 +966,10 @@ export function OperationsDashboard() {
                     <Button
                       className="mt-5 bg-[#173f2e] text-white hover:bg-[#102a20]"
                       onClick={runOfflineScenario}
-                      disabled={isActing}
+                      disabled={isActing || !canOperate}
+                      title={
+                        canOperate ? undefined : "Operator role required"
+                      }
                     >
                       <Play className="fill-current" />
                       Run offline scenario

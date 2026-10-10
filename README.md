@@ -44,7 +44,8 @@ flowchart LR
     Tools --> Store
     Diagnostic --> Review[Human review]
     Review --> Action[Simulated notification]
-    API --> Web[Next.js operations dashboard]
+    API --> Auth[JWT Operator / Approver]
+    Auth --> Web[Next.js operations dashboard]
 ```
 
 ## Technology
@@ -66,6 +67,7 @@ flowchart LR
 - Versioned offline evaluation dataset and scoring CLI
 - Schema-validated read-only tool registry with telemetry, fleet comparison, and incident history tools
 - OpenTelemetry traces and metrics with JSON structured console logs
+- JWT authentication with Operator / Approver role policies
 
 ## Retrieval pipeline
 
@@ -105,6 +107,34 @@ npm run dev -- --hostname 0.0.0.0 --port 43123
 ```
 
 Open <http://127.0.0.1:43123>.
+
+The dashboard requires sign-in. Use a demo account:
+
+| Username | Password | Roles |
+| --- | --- | --- |
+| `operator` | `operate-demo` | Operator (run scenarios, reset, tools) |
+| `approver` | `approve-demo` | Approver (approve notifications) |
+| `admin` | `admin-demo` | Operator + Approver |
+
+JWT Bearer tokens gate the API. `approvedBy` is taken from the authenticated identity, not from the client body. `/health` and `/api/auth/login` remain anonymous; everything else under `/api` requires a valid token, with `CanOperate` / `CanApprove` policies on mutation endpoints.
+
+Obtain a token for curl:
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:5080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin-demo"}' \
+  | jq -r .accessToken)
+```
+
+PowerShell:
+
+```powershell
+$login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:5080/api/auth/login `
+  -ContentType "application/json" `
+  -Body '{"username":"admin","password":"admin-demo"}'
+$TOKEN = $login.accessToken
+```
 
 ### Observability
 
@@ -242,16 +272,18 @@ Three audited tools are registered:
 
 The generic registry rejects unknown arguments, enforces a two-second timeout, accepts read-only tools only, and records success or failure without storing telemetry payloads in the audit summary.
 
-Discover available tools:
+Discover available tools (after obtaining `$TOKEN` as shown above):
 
 ```bash
-curl http://127.0.0.1:5080/api/tools
+curl http://127.0.0.1:5080/api/tools \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 After running the offline scenario, retrieve two events:
 
 ```bash
 curl -X POST http://127.0.0.1:5080/api/tools/recent-asset-telemetry \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "arguments": {
@@ -265,6 +297,7 @@ Compare the offline vehicle with peers:
 
 ```bash
 curl -X POST http://127.0.0.1:5080/api/tools/fleet-comparison \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "arguments": {
@@ -278,6 +311,7 @@ Inspect recent incidents for the same asset:
 
 ```bash
 curl -X POST http://127.0.0.1:5080/api/tools/incident-history \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "arguments": {
@@ -290,7 +324,8 @@ curl -X POST http://127.0.0.1:5080/api/tools/incident-history \
 Inspect the bounded audit trail:
 
 ```bash
-curl "http://127.0.0.1:5080/api/tools/audit?limit=20"
+curl "http://127.0.0.1:5080/api/tools/audit?limit=20" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Gemini and OpenAI may request one allowlisted tool per diagnosis, and only for the asset in the current incident. Unknown tools, cross-asset requests, malformed arguments, repeated calls, timeouts, and oversized results fail closed. Tool executions and policy rejections are both visible in the audit trail with server-controlled caller labels such as `gemini/gemini-3.8-flash`, `openai/gpt-4o-mini`, or `operator-api`.
@@ -338,14 +373,11 @@ npm run build
 - Semantic embeddings are optional and isolated behind `ITextEmbeddingService`; the default vector path stays offline.
 - Registered operations tools are read-only, bounded, timed, and audited.
 - Gemini and OpenAI tool calls are allowlisted, incident-scoped, and limited to one round.
-- Proposed actions require explicit approval.
+- Proposed actions require explicit approval from an Approver role.
+- Operators and approvers are separated by JWT role policies; clients cannot self-assert `approvedBy`.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
 - Operational traces, metrics, and structured logs are emitted without capturing raw telemetry payloads or model prompts.
-
-## Roadmap
-
-- Authentication and role-based approvals
 
 ## License
 
