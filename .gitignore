@@ -24,3 +24,4 @@ node_modules/
 # Test and coverage output
 coverage/
 TestResults/
+artifacts/

@@ -51,6 +51,17 @@ jobs:
         env:
           RUNBOOK_PGVECTOR_TEST_CONNECTION: Host=127.0.0.1;Port=5432;Database=connectedops_test;Username=connectedops;Password=connectedops_test
 
+      - name: Run offline safety evaluations
+        run: dotnet run --project tools/ConnectedOps.Evals --configuration Release --no-build
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: connectedops-evaluation-report
+          path: artifacts/eval-report.json
+          if-no-files-found: error
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

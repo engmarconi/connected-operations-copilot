@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\ConnectedOps.Domain\ConnectedOps.Domain.csproj" />
     <ProjectReference Include="..\..\src\ConnectedOps.Application\ConnectedOps.Application.csproj" />
     <ProjectReference Include="..\..\src\ConnectedOps.Infrastructure\ConnectedOps.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\tools\ConnectedOps.Evals\ConnectedOps.Evals.csproj" />
   </ItemGroup>
 
 </Project>

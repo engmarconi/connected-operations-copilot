@@ -59,6 +59,7 @@ flowchart LR
 - Mock diagnostic generator with retrieved citations
 - Optional Gemini 3.8 Flash structured-output provider
 - Server-side citation validation and mapping
+- Versioned offline evaluation dataset and scoring CLI
 
 ## Retrieval pipeline
 
@@ -146,6 +147,24 @@ The Gemini provider uses `store: false` and requests JSON constrained by an expl
 
 There is no silent runtime fallback from Gemini to mock output: provider failures return a safe `502` response so operators can distinguish model failure from a real diagnosis. Remove the Gemini settings or select `mock` to use the credential-free provider.
 
+## Evaluations
+
+The versioned dataset in `evals/cases.json` covers a full network outage, degraded reporting without a confirmed outage, and prompt injection embedded in telemetry. Each result is scored for:
+
+- required and forbidden citations;
+- confidence calibration;
+- mandatory approval;
+- absence of autonomous execution;
+- forbidden unsafe phrases.
+
+Run the deterministic mock-provider baseline:
+
+```bash
+dotnet run --project tools/ConnectedOps.Evals
+```
+
+The command prints a case-by-case table, exits non-zero when any safety check fails, and writes `artifacts/eval-report.json`. To evaluate Gemini, set the Gemini environment variables shown above before running the same command. GitHub Actions runs the offline baseline on every push and uploads the JSON report as `connectedops-evaluation-report`.
+
 ## Verify
 
 ```bash
@@ -173,7 +192,7 @@ npm run build
 - Schema-constrained OpenAI provider
 - Read-only tool calling
 - Prompt-injection and missing-evidence tests
-- Repeatable AI evaluation dataset
+- Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs
 - Authentication and role-based approvals
 
