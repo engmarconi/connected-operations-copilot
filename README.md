@@ -28,7 +28,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 7. The provider proposes an operator notification.
 8. The notification is only simulated after explicit human approval.
 
-The deterministic mock generator remains the default so the demo runs without credentials. An optional Gemini 3.8 Flash provider uses the Interactions API with schema-constrained JSON output. Retrieval supports weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search. pgvector defaults to deterministic feature-hash embeddings so the vector path stays credential-free; an optional Gemini Embedding provider can replace those hashes with purpose-aware semantic vectors.
+The deterministic mock generator remains the default so the demo runs without credentials. Optional Gemini 3.8 Flash and OpenAI providers return schema-constrained JSON diagnoses with the same server-side citation validation and approval gate. Retrieval supports weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search. pgvector defaults to deterministic feature-hash embeddings so the vector path stays credential-free; an optional Gemini Embedding provider can replace those hashes with purpose-aware semantic vectors.
 
 ## Architecture
 
@@ -61,6 +61,7 @@ flowchart LR
 - Optional Gemini Embedding semantic vectors behind `ITextEmbeddingService`
 - Mock diagnostic generator with retrieved citations
 - Optional Gemini 3.8 Flash structured-output provider
+- Optional OpenAI schema-constrained diagnostic provider
 - Server-side citation validation and mapping
 - Versioned offline evaluation dataset and scoring CLI
 - Schema-validated read-only tool registry with audit records
@@ -184,6 +185,28 @@ Gemini may make one stateless function call to the allowlisted telemetry tool. T
 
 There is no silent runtime fallback from Gemini to mock output: provider failures return a safe `502` response so operators can distinguish model failure from a real diagnosis. Remove the Gemini settings or select `mock` to use the credential-free provider.
 
+### Run with OpenAI
+
+Create an API key in the OpenAI platform, then configure the backend:
+
+```bash
+export Diagnostics__Provider=openai
+export Diagnostics__OpenAI__ApiKey='your-api-key'
+export Diagnostics__OpenAI__Model=gpt-4o-mini
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+PowerShell:
+
+```powershell
+$env:Diagnostics__Provider = "openai"
+$env:Diagnostics__OpenAI__ApiKey = "your-api-key"
+$env:Diagnostics__OpenAI__Model = "gpt-4o-mini"
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+The OpenAI provider uses Chat Completions with `response_format` set to a strict `json_schema`. Like Gemini, it receives untrusted telemetry and retrieved runbook excerpts, may make one allowlisted `recent-asset-telemetry` call for the incident asset, and can cite only server-issued evidence keys such as `E1`. Fabricated keys, missing evidence, cross-asset tool calls, and extra tool rounds fail closed with a safe `502`.
+
 ## Read-only operations tools
 
 The first tool, `recent-asset-telemetry`, returns at most 20 recent synthetic events for one asset. The generic registry rejects unknown arguments, enforces a two-second timeout, accepts read-only tools only, and records success or failure without storing telemetry payloads in the audit summary.
@@ -234,7 +257,7 @@ Run the deterministic mock-provider baseline:
 dotnet run --project tools/ConnectedOps.Evals
 ```
 
-The command prints a case-by-case table, exits non-zero when any safety check fails, and writes `artifacts/eval-report.json`. To evaluate Gemini, set the Gemini environment variables shown above before running the same command. GitHub Actions runs the offline baseline on every push and uploads the JSON report as `connectedops-evaluation-report`.
+The command prints a case-by-case table, exits non-zero when any safety check fails, and writes `artifacts/eval-report.json`. To evaluate Gemini or OpenAI, set the corresponding diagnostic environment variables shown above before running the same command. GitHub Actions runs the offline baseline on every push and uploads the JSON report as `connectedops-evaluation-report`.
 
 ## Verify
 
@@ -257,14 +280,13 @@ npm run build
 - Diagnosis is refused when retrieval returns no approved runbook evidence.
 - Semantic embeddings are optional and isolated behind `ITextEmbeddingService`; the default vector path stays offline.
 - Registered operations tools are read-only, bounded, timed, and audited.
-- Gemini tool calls are allowlisted, incident-scoped, stateless, and limited to one round.
+- Gemini and OpenAI tool calls are allowlisted, incident-scoped, and limited to one round.
 - Proposed actions require explicit approval.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
 
 ## Roadmap
 
-- Schema-constrained OpenAI provider
 - Additional audited tools for fleet comparison and incident history
 - Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs

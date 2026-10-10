@@ -131,12 +131,26 @@ public static class DependencyInjection
             return;
         }
 
-        if (!providerName.Equals("gemini", StringComparison.OrdinalIgnoreCase))
+        if (providerName.Equals("gemini", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
-                $"Unsupported diagnostic provider '{providerName}'. Use 'mock' or 'gemini'.");
+            AddGeminiDiagnosticProvider(services, configuration);
+            return;
         }
 
+        if (providerName.Equals("openai", StringComparison.OrdinalIgnoreCase))
+        {
+            AddOpenAiDiagnosticProvider(services, configuration);
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported diagnostic provider '{providerName}'. Use 'mock', 'gemini', or 'openai'.");
+    }
+
+    private static void AddGeminiDiagnosticProvider(
+        IServiceCollection services,
+        IConfiguration? configuration)
+    {
         var apiKey = configuration?["Diagnostics:Gemini:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -165,5 +179,39 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(30);
         });
         services.AddSingleton<IDiagnosticService, GeminiDiagnosticService>();
+    }
+
+    private static void AddOpenAiDiagnosticProvider(
+        IServiceCollection services,
+        IConfiguration? configuration)
+    {
+        var apiKey = configuration?["Diagnostics:OpenAI:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Diagnostics:OpenAI:ApiKey is required when Diagnostics:Provider is 'openai'.");
+        }
+
+        var model = configuration?["Diagnostics:OpenAI:Model"]?.Trim();
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = "gpt-4o-mini";
+        }
+
+        var endpointValue = configuration?["Diagnostics:OpenAI:Endpoint"]?.Trim()
+            ?? "https://api.openai.com/v1/chat/completions";
+        if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out var endpoint)
+            || endpoint.Scheme is not "https")
+        {
+            throw new InvalidOperationException(
+                "Diagnostics:OpenAI:Endpoint must be an absolute HTTPS URL.");
+        }
+
+        services.AddSingleton(new OpenAiDiagnosticOptions(apiKey, model, endpoint));
+        services.AddHttpClient<IOpenAiChatClient, OpenAiChatClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddSingleton<IDiagnosticService, OpenAiDiagnosticService>();
     }
 }

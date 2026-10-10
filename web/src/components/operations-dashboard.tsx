@@ -123,8 +123,8 @@ function providerLabel(provider?: string) {
     return "Retrieved evidence · validated citations";
   }
 
-  if (provider.startsWith("gemini/")) {
-    const model = provider.split("/")[1] ?? "gemini";
+  if (provider.startsWith("gemini/") || provider.startsWith("openai/")) {
+    const model = provider.split("/")[1] ?? "model";
     const displayModel = model
       .split("-")
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -142,6 +142,10 @@ function providerLabel(provider?: string) {
 function providerFooterLabel(provider?: string) {
   if (provider?.startsWith("gemini/")) {
     return "Gemini AI provider";
+  }
+
+  if (provider?.startsWith("openai/")) {
+    return "OpenAI provider";
   }
 
   if (provider?.startsWith("mock-generator/")) {
