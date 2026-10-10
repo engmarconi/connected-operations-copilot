@@ -96,6 +96,20 @@ type Dashboard = {
   generatedAt: string;
 };
 
+type ToolAuditRecord = {
+  id: string;
+  toolName: string;
+  caller: string;
+  startedAt: string;
+  durationMilliseconds: number;
+  succeeded: boolean;
+  summary: string;
+};
+
+type DashboardView = Dashboard & {
+  toolAudit: ToolAuditRecord[];
+};
+
 function timeLabel(value: string) {
   return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -181,20 +195,28 @@ function DashboardSkeleton() {
 }
 
 export function OperationsDashboard() {
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActing, setIsActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actionInFlight = useRef(false);
 
   const fetchDashboard = useCallback(async () => {
-    const response = await fetch(`${API_URL}/operations/dashboard`, {
-      cache: "no-store",
-    });
-    if (!response.ok) {
+    const [dashboardResponse, auditResponse] = await Promise.all([
+      fetch(`${API_URL}/operations/dashboard`, { cache: "no-store" }),
+      fetch(`${API_URL}/tools/audit?limit=5`, { cache: "no-store" }),
+    ]);
+    if (!dashboardResponse.ok || !auditResponse.ok) {
       throw new Error("The operations API did not return a dashboard.");
     }
-    return (await response.json()) as Dashboard;
+    const snapshot = (await dashboardResponse.json()) as Dashboard;
+    const audit = (await auditResponse.json()) as {
+      records: ToolAuditRecord[];
+    };
+    return {
+      ...snapshot,
+      toolAudit: audit.records,
+    };
   }, []);
 
   useEffect(() => {
@@ -403,6 +425,81 @@ export function OperationsDashboard() {
                 </CardContent>
               </Card>
             </section>
+
+            <Card className="rounded-2xl border-black/5 bg-white shadow-sm">
+              <CardHeader>
+                <CardDescription>Audited execution</CardDescription>
+                <CardAction>
+                  <Badge
+                    variant="outline"
+                    className="border-black/10 bg-[#f4f6f3] text-[#52705f]"
+                  >
+                    {dashboard.toolAudit.length} recent
+                  </Badge>
+                </CardAction>
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldCheck className="size-5 text-[#31531e]" />
+                  Read-only tool activity
+                </CardTitle>
+                <CardDescription>
+                  Server-controlled caller labels, bounded results and no write
+                  capabilities
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {dashboard.toolAudit.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-black/10 bg-[#f8faf7] px-4 py-5 text-sm text-[#617067]">
+                    No tool calls recorded. Gemini or an operator may request
+                    recent telemetry after an incident opens.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-black/5 rounded-xl border border-black/5">
+                    {dashboard.toolAudit.map((record) => (
+                      <div
+                        key={record.id}
+                        className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              className={
+                                record.succeeded
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-red-200 bg-red-50 text-red-700"
+                              }
+                            >
+                              {record.succeeded ? (
+                                <Check className="size-3" />
+                              ) : (
+                                <AlertTriangle className="size-3" />
+                              )}
+                              {record.succeeded ? "Succeeded" : "Blocked"}
+                            </Badge>
+                            <span className="truncate font-mono text-xs font-semibold text-[#25451b]">
+                              {record.toolName}
+                            </span>
+                            <span className="text-xs text-[#738078]">
+                              {record.durationMilliseconds} ms
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-5 text-[#526159]">
+                            {record.summary}
+                          </p>
+                        </div>
+                        <div className="text-left text-xs text-[#738078] sm:text-right">
+                          <div className="font-medium text-[#52705f]">
+                            {record.caller}
+                          </div>
+                          <div className="mt-1">
+                            {timeLabel(record.startedAt)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <section className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
               <Card className="rounded-2xl border-black/5 bg-white shadow-sm">

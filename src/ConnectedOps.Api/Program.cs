@@ -96,9 +96,7 @@ operations.MapPost(
             var result = await service.ExecuteAsync(
                 toolName,
                 request.Arguments,
-                string.IsNullOrWhiteSpace(request.Caller)
-                    ? "operator-api"
-                    : request.Caller.Trim(),
+                "operator-api",
                 cancellationToken);
             return Results.Ok(result);
         }
@@ -150,5 +148,4 @@ app.Run();
 
 public sealed record ApproveActionRequest(string ApprovedBy);
 public sealed record ToolExecutionRequest(
-    System.Text.Json.JsonElement Arguments,
-    string? Caller);
+    System.Text.Json.JsonElement Arguments);

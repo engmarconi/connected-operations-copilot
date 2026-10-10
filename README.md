@@ -171,8 +171,7 @@ curl -X POST http://127.0.0.1:5080/api/tools/recent-asset-telemetry \
     "arguments": {
       "assetId": "11111111-1111-1111-1111-111111111111",
       "limit": 2
-    },
-    "caller": "operator-demo"
+    }
   }'
 ```
 
@@ -182,7 +181,9 @@ Inspect the bounded audit trail:
 curl "http://127.0.0.1:5080/api/tools/audit?limit=20"
 ```
 
-Gemini can request this tool only for the asset in the current incident and at most once per diagnosis. Unknown tools, cross-asset requests, malformed arguments, repeated calls, timeouts, and oversized results fail closed. Tool executions and policy rejections are both visible in the audit trail with caller identity such as `gemini/gemini-3.8-flash`.
+Gemini can request this tool only for the asset in the current incident and at most once per diagnosis. Unknown tools, cross-asset requests, malformed arguments, repeated calls, timeouts, and oversized results fail closed. Tool executions and policy rejections are both visible in the audit trail with server-controlled caller labels such as `gemini/gemini-3.8-flash` or `operator-api`.
+
+The dashboard renders the five most recent audit records, including status, tool name, trusted caller label, duration, safe summary, and timestamp. Raw telemetry payloads and model prompts are not copied into audit summaries.
 
 ## Evaluations
 
