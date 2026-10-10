@@ -22,6 +22,10 @@ public interface IDiagnosticService
         CancellationToken cancellationToken);
 }
 
+public sealed class DiagnosticProviderException(
+    string message,
+    Exception? innerException = null) : Exception(message, innerException);
+
 public interface IRunbookRetriever
 {
     string ProviderId { get; }

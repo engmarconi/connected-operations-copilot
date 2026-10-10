@@ -13,7 +13,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IOperationsStore, InMemoryOperationsStore>();
         AddRunbookRetrieval(services, configuration);
-        services.AddSingleton<IDiagnosticService, MockDiagnosticService>();
+        AddDiagnosticProvider(services, configuration);
         services.AddSingleton<OperationsService>();
 
         return services;
@@ -48,5 +48,52 @@ public static class DependencyInjection
             new PgvectorRunbookRetriever(
                 connectionString,
                 provider.GetRequiredService<ITextEmbeddingService>()));
+    }
+
+    private static void AddDiagnosticProvider(
+        IServiceCollection services,
+        IConfiguration? configuration)
+    {
+        var providerName = configuration?["Diagnostics:Provider"]?.Trim() ?? "mock";
+        if (providerName.Equals("mock", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<IDiagnosticService, MockDiagnosticService>();
+            return;
+        }
+
+        if (!providerName.Equals("gemini", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Unsupported diagnostic provider '{providerName}'. Use 'mock' or 'gemini'.");
+        }
+
+        var apiKey = configuration?["Diagnostics:Gemini:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Diagnostics:Gemini:ApiKey is required when Diagnostics:Provider is 'gemini'.");
+        }
+
+        var model = configuration?["Diagnostics:Gemini:Model"]?.Trim();
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = "gemini-3.8-flash";
+        }
+
+        var endpointValue = configuration?["Diagnostics:Gemini:Endpoint"]?.Trim()
+            ?? "https://generativelanguage.googleapis.com/v1beta/interactions";
+        if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out var endpoint)
+            || endpoint.Scheme is not "https")
+        {
+            throw new InvalidOperationException(
+                "Diagnostics:Gemini:Endpoint must be an absolute HTTPS URL.");
+        }
+
+        services.AddSingleton(new GeminiDiagnosticOptions(apiKey, model, endpoint));
+        services.AddHttpClient<IGeminiInteractionsClient, GeminiInteractionsClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddSingleton<IDiagnosticService, GeminiDiagnosticService>();
     }
 }

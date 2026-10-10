@@ -19,7 +19,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 3. The deterministic simulator records rising latency, timeouts, and heartbeat loss.
 4. The incident engine opens a high-severity incident.
 5. The configured retrieval pipeline ranks versioned runbook sections against the incident telemetry.
-6. A deterministic mock diagnostic provider returns:
+6. The configured diagnostic provider returns:
    - an evidence summary;
    - probable causes;
    - recommended checks;
@@ -28,7 +28,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 7. The provider proposes an operator notification.
 8. The notification is only simulated after explicit human approval.
 
-The mock generator keeps the demo runnable without credentials. Retrieval supports two explicit modes: weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search using deterministic feature-hash embeddings. The feature hashes validate vector storage and retrieval architecture, but they are not presented as model-generated semantic embeddings.
+The deterministic mock generator remains the default so the demo runs without credentials. An optional Gemini 3.8 Flash provider uses the Interactions API with schema-constrained JSON output. Retrieval supports weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search using deterministic feature-hash embeddings. The feature hashes validate vector storage and retrieval architecture, but they are not presented as model-generated semantic embeddings.
 
 ## Architecture
 
@@ -37,7 +37,7 @@ flowchart LR
     Simulator[Synthetic asset simulator] --> API[ASP.NET Core API]
     API --> Rules[Deterministic incident rules]
     Rules --> Store[In-memory operations store]
-    Store --> Diagnostic[Mock diagnostic generator]
+    Store --> Diagnostic[Mock or Gemini diagnostics]
     Runbooks[Versioned Markdown runbooks] --> Retrieval[Local index or pgvector]
     Retrieval --> Diagnostic
     Diagnostic --> Review[Human review]
@@ -57,6 +57,8 @@ flowchart LR
 - Optional PostgreSQL 17 and pgvector retrieval
 - Deterministic 256-dimension feature-hash embeddings
 - Mock diagnostic generator with retrieved citations
+- Optional Gemini 3.8 Flash structured-output provider
+- Server-side citation validation and mapping
 
 ## Retrieval pipeline
 
@@ -120,6 +122,30 @@ dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
 
 The database credentials are local demo values from `compose.yaml`. Local retrieval remains the default when these settings are absent.
 
+### Run with Gemini
+
+Create an API key in Google AI Studio, then configure the backend:
+
+```bash
+export Diagnostics__Provider=gemini
+export Diagnostics__Gemini__ApiKey='your-api-key'
+export Diagnostics__Gemini__Model=gemini-3.8-flash
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+PowerShell:
+
+```powershell
+$env:Diagnostics__Provider = "gemini"
+$env:Diagnostics__Gemini__ApiKey = "your-api-key"
+$env:Diagnostics__Gemini__Model = "gemini-3.8-flash"
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+The Gemini provider uses `store: false` and requests JSON constrained by an explicit diagnostic schema. The model receives untrusted telemetry and retrieved runbook excerpts, but it can cite only server-issued evidence keys such as `E1`. The server rejects missing or fabricated keys and builds citation titles, sections, and excerpts from its own retrieved data. Proposed actions remain deterministic, simulated, and approval-gated.
+
+There is no silent runtime fallback from Gemini to mock output: provider failures return a safe `502` response so operators can distinguish model failure from a real diagnosis. Remove the Gemini settings or select `mock` to use the credential-free provider.
+
 ## Verify
 
 ```bash
@@ -136,6 +162,7 @@ npm run build
 - Incident creation is deterministic, not model-controlled.
 - The diagnostic provider has no direct database or device access.
 - Diagnosis citations are created from retrieved, versioned runbook sections.
+- Model-provided citation keys are validated against server-retrieved evidence.
 - Proposed actions require explicit approval.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
@@ -143,7 +170,7 @@ npm run build
 ## Roadmap
 
 - Model-generated semantic embeddings behind `ITextEmbeddingService`
-- Schema-constrained Gemini and OpenAI providers
+- Schema-constrained OpenAI provider
 - Read-only tool calling
 - Prompt-injection and missing-evidence tests
 - Repeatable AI evaluation dataset

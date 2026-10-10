@@ -51,6 +51,13 @@ operations.MapPost(
         {
             return Results.NotFound(new { error = exception.Message });
         }
+        catch (DiagnosticProviderException exception)
+        {
+            return Results.Problem(
+                title: "Diagnostic provider failed safely",
+                detail: exception.Message,
+                statusCode: StatusCodes.Status502BadGateway);
+        }
     });
 
 operations.MapPost("/simulation/reset", (OperationsService service) =>
