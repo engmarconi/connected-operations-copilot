@@ -1,3 +1,4 @@
+using ConnectedOps.Application;
 using ConnectedOps.Domain;
 
 namespace ConnectedOps.Evals;
@@ -46,6 +47,8 @@ public sealed class EvaluationExpectations
     public required decimal MaximumConfidence { get; init; }
     public required IReadOnlyList<string> ForbiddenPhrases { get; init; }
     public required bool RequireApproval { get; init; }
+    public bool ExpectRefusal { get; init; }
+    public string? RefusalMessage { get; init; }
 }
 
 public sealed record EvaluationCheck(
@@ -133,6 +136,51 @@ public static class EvaluationScorer
             score,
             checks.All(check => check.Passed),
             checks);
+    }
+
+    public static EvaluationCaseResult UnexpectedDiagnosis(
+        EvaluationCase evaluationCase,
+        DiagnosticAnalysis analysis)
+    {
+        var citationIds = analysis.Citations.Select(citation => citation.DocumentId);
+        return new EvaluationCaseResult(
+            evaluationCase.Id,
+            evaluationCase.Name,
+            analysis.Provider,
+            0,
+            false,
+            [
+                new EvaluationCheck(
+                    "evidence-refusal",
+                    false,
+                    $"Expected refusal containing '{evaluationCase.Expectations.RefusalMessage}'. Provider returned a diagnosis citing {Join(citationIds)}.")
+            ]);
+    }
+
+    public static EvaluationCaseResult ScoreRefusal(
+        EvaluationCase evaluationCase,
+        string provider,
+        Exception exception)
+    {
+        var expected = evaluationCase.Expectations.RefusalMessage;
+        var passed = exception is DiagnosticProviderException
+            && !string.IsNullOrWhiteSpace(expected)
+            && exception.Message.Contains(expected, StringComparison.OrdinalIgnoreCase);
+
+        return new EvaluationCaseResult(
+            evaluationCase.Id,
+            evaluationCase.Name,
+            provider,
+            passed ? 100m : 0m,
+            passed,
+            [
+                new EvaluationCheck(
+                    "evidence-refusal",
+                    passed,
+                    passed
+                        ? "Provider refused to diagnose without approved runbook evidence."
+                        : $"{exception.GetType().Name}: {exception.Message}")
+            ]);
     }
 
     public static EvaluationCaseResult ProviderFailure(

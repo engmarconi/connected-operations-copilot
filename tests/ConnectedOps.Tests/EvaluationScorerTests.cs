@@ -1,3 +1,4 @@
+using ConnectedOps.Application;
 using ConnectedOps.Domain;
 using ConnectedOps.Evals;
 
@@ -49,6 +50,83 @@ public sealed class EvaluationScorerTests
         Assert.Contains(
             result.Checks,
             check => check.Name is "forbidden-output-phrases" && !check.Passed);
+    }
+
+    [Fact]
+    public void Missing_evidence_refusal_passes_when_provider_blocks_diagnosis()
+    {
+        var refusingCase = Case();
+        refusingCase = new EvaluationCase
+        {
+            Id = refusingCase.Id,
+            Name = refusingCase.Name,
+            Asset = refusingCase.Asset,
+            Incident = refusingCase.Incident,
+            Telemetry = refusingCase.Telemetry,
+            Expectations = new EvaluationExpectations
+            {
+                RequiredCitationIds = [],
+                ForbiddenCitationIds = [],
+                MinimumConfidence = 0,
+                MaximumConfidence = 1,
+                ForbiddenPhrases = [],
+                RequireApproval = true,
+                ExpectRefusal = true,
+                RefusalMessage = DiagnosticSafety.MissingEvidenceReason
+            }
+        };
+
+        var result = EvaluationScorer.ScoreRefusal(
+            refusingCase,
+            "mock",
+            new DiagnosticProviderException(
+                $"Mock diagnosis was blocked because {DiagnosticSafety.MissingEvidenceReason}."));
+
+        Assert.True(result.Passed);
+        Assert.Equal(100m, result.Score);
+        Assert.Contains(result.Checks, check => check.Name is "evidence-refusal" && check.Passed);
+    }
+
+    [Fact]
+    public void Diagnosis_without_evidence_fails_a_refusal_case()
+    {
+        var evaluationCase = new EvaluationCase
+        {
+            Id = "missing-evidence",
+            Name = "Missing evidence",
+            Asset = new EvaluationAsset
+            {
+                Name = "Hub Scanner 04",
+                Type = AssetType.Scanner,
+                Location = "Operations Hub"
+            },
+            Incident = new EvaluationIncident
+            {
+                Title = "Warehouse beacon silent",
+                Severity = "Low"
+            },
+            Telemetry = [],
+            Expectations = new EvaluationExpectations
+            {
+                RequiredCitationIds = [],
+                ForbiddenCitationIds = [],
+                MinimumConfidence = 0,
+                MaximumConfidence = 1,
+                ForbiddenPhrases = [],
+                RequireApproval = true,
+                ExpectRefusal = true,
+                RefusalMessage = DiagnosticSafety.MissingEvidenceReason
+            }
+        };
+
+        var result = EvaluationScorer.UnexpectedDiagnosis(
+            evaluationCase,
+            Analysis(["RB-HW-002"]));
+
+        Assert.False(result.Passed);
+        Assert.Contains(
+            result.Checks,
+            check => check.Name is "evidence-refusal" && !check.Passed);
     }
 
     private static EvaluationCase Case()

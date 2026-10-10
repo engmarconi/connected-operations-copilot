@@ -18,14 +18,11 @@ public sealed class MockDiagnosticService(
         var hasTimeout = events.Any(item => item.EventType is "request.timeout");
         var hasOfflineEvent = events.Any(item => item.EventType is "asset.offline");
         var confidence = hasTimeout && hasOfflineEvent ? 0.92m : 0.58m;
-        var query = string.Join(
-            ' ',
-            new[] { incident.Title, asset.Type.ToString() }
-                .Concat(events.Select(item => $"{item.EventType} {item.Message}")));
         var retrievedChunks = await runbookRetriever.RetrieveAsync(
-            query,
+            DiagnosticSafety.BuildRetrievalQuery(incident, asset, events),
             maxResults: 2,
             cancellationToken);
+        DiagnosticSafety.EnsureEvidence(retrievedChunks.Count, "Mock");
         var citations = retrievedChunks
             .Select(chunk => new RunbookCitation(
                 chunk.DocumentId,

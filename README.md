@@ -66,7 +66,7 @@ flowchart LR
 
 ## Retrieval pipeline
 
-Runbooks under `runbooks/` are embedded into the backend at build time. The ingestion layer validates document metadata and chunks each document by section. Incident titles and telemetry become the retrieval query, with at most one section returned per document.
+Runbooks under `runbooks/` are embedded into the backend at build time. The ingestion layer validates document metadata and chunks each document by section. The retrieval query is built from the incident title, asset type, and recognized telemetry categories (`request.slow`, `request.timeout`, and `asset.offline`). Free-text telemetry messages are untrusted and are excluded, so injected keywords cannot steer ranking. At most one section is returned per document.
 
 `IRunbookRetriever` keeps retrieval independent from diagnosis generation:
 
@@ -187,13 +187,14 @@ The dashboard renders the five most recent audit records, including status, tool
 
 ## Evaluations
 
-The versioned dataset in `evals/cases.json` covers a full network outage, degraded reporting without a confirmed outage, and prompt injection embedded in telemetry. Each result is scored for:
+The versioned dataset in `evals/cases.json` covers a full network outage, degraded reporting without a confirmed outage, prompt injection in telemetry text, keyword injection that tries to steer retrieval toward a hardware runbook, and an incident with no matching runbook. Each result is scored for:
 
 - required and forbidden citations;
 - confidence calibration;
 - mandatory approval;
 - absence of autonomous execution;
-- forbidden unsafe phrases.
+- forbidden unsafe phrases;
+- refusal when no approved runbook evidence matches.
 
 Run the deterministic mock-provider baseline:
 
@@ -220,6 +221,8 @@ npm run build
 - The diagnostic provider has no direct database or device access.
 - Diagnosis citations are created from retrieved, versioned runbook sections.
 - Model-provided citation keys are validated against server-retrieved evidence.
+- Telemetry message text cannot steer runbook retrieval.
+- Diagnosis is refused when retrieval returns no approved runbook evidence.
 - Registered operations tools are read-only, bounded, timed, and audited.
 - Gemini tool calls are allowlisted, incident-scoped, stateless, and limited to one round.
 - Proposed actions require explicit approval.
@@ -231,7 +234,6 @@ npm run build
 - Model-generated semantic embeddings behind `ITextEmbeddingService`
 - Schema-constrained OpenAI provider
 - Additional audited tools for fleet comparison and incident history
-- Prompt-injection and missing-evidence tests
 - Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs
 - Authentication and role-based approvals

@@ -399,19 +399,11 @@ public sealed class GeminiDiagnosticService(
         IReadOnlyList<TelemetryEvent> events,
         CancellationToken cancellationToken)
     {
-        var retrievalQuery = string.Join(
-            ' ',
-            new[] { incident.Title, asset.Type.ToString() }
-                .Concat(events.Select(item => $"{item.EventType} {item.Message}")));
         var chunks = await runbookRetriever.RetrieveAsync(
-            retrievalQuery,
+            DiagnosticSafety.BuildRetrievalQuery(incident, asset, events),
             maxResults: 3,
             cancellationToken);
-        if (chunks.Count is 0)
-        {
-            throw new DiagnosticProviderException(
-                "Gemini diagnosis was blocked because no approved runbook evidence was retrieved.");
-        }
+        DiagnosticSafety.EnsureEvidence(chunks.Count, "Gemini");
 
         var evidence = chunks
             .Select((chunk, index) => new EvidenceItem($"E{index + 1}", chunk))

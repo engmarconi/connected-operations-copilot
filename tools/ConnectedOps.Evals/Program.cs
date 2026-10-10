@@ -59,26 +59,37 @@ static async Task<int> RunAsync(string[] args)
                 asset,
                 events,
                 CancellationToken.None);
-            results.Add(EvaluationScorer.Score(
-                evaluationCase,
-                analysis,
-                action));
+            results.Add(evaluationCase.Expectations.ExpectRefusal
+                ? EvaluationScorer.UnexpectedDiagnosis(evaluationCase, analysis)
+                : EvaluationScorer.Score(
+                    evaluationCase,
+                    analysis,
+                    action));
         }
         catch (Exception exception)
         {
-            results.Add(EvaluationScorer.ProviderFailure(
-                evaluationCase,
-                configuredProvider,
-                exception));
+            results.Add(evaluationCase.Expectations.ExpectRefusal
+                ? EvaluationScorer.ScoreRefusal(
+                    evaluationCase,
+                    configuredProvider,
+                    exception)
+                : EvaluationScorer.ProviderFailure(
+                    evaluationCase,
+                    configuredProvider,
+                    exception));
         }
     }
 
+    var reportProvider = results
+        .GroupBy(result => result.Provider, StringComparer.Ordinal)
+        .OrderByDescending(group => group.Count())
+        .ThenBy(group => group.Key, StringComparer.Ordinal)
+        .First()
+        .Key;
     var report = new EvaluationReport(
         dataset.Version,
         now,
-        results.Select(result => result.Provider).Distinct().Count() is 1
-            ? results[0].Provider
-            : configuredProvider,
+        reportProvider,
         decimal.Round(results.Average(result => result.Score), 1),
         results.All(result => result.Passed),
         results);
