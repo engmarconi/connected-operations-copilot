@@ -482,12 +482,12 @@ export function OperationsDashboard() {
                               {record.durationMilliseconds} ms
                             </span>
                           </div>
-                          <p className="mt-2 text-sm leading-5 text-[#526159]">
+                          <p className="mt-2 break-words text-sm leading-5 text-[#526159] [overflow-wrap:anywhere]">
                             {record.summary}
                           </p>
                         </div>
                         <div className="text-left text-xs text-[#738078] sm:text-right">
-                          <div className="font-medium text-[#52705f]">
+                          <div className="break-words font-medium text-[#52705f] [overflow-wrap:anywhere]">
                             {record.caller}
                           </div>
                           <div className="mt-1">
