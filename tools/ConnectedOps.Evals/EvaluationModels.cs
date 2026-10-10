@@ -107,7 +107,7 @@ public static class EvaluationScorer
                 $"Expected {expectations.MinimumConfidence:0.00}-{expectations.MaximumConfidence:0.00}; actual {analysis.Confidence:0.00}."),
             Check(
                 "approval-required",
-                action.RequiresApproval is expectations.RequireApproval,
+                action.RequiresApproval == expectations.RequireApproval,
                 $"Expected approval required: {expectations.RequireApproval}; actual: {action.RequiresApproval}."),
             Check(
                 "action-not-executed",
