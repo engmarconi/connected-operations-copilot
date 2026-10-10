@@ -457,7 +457,7 @@ export function OperationsDashboard() {
                     {dashboard.toolAudit.map((record) => (
                       <div
                         key={record.id}
-                        className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        className="grid min-w-0 max-w-full gap-3 overflow-hidden px-4 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                       >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -482,12 +482,12 @@ export function OperationsDashboard() {
                               {record.durationMilliseconds} ms
                             </span>
                           </div>
-                          <p className="mt-2 break-words text-sm leading-5 text-[#526159] [overflow-wrap:anywhere]">
+                          <p className="mt-2 min-w-0 max-w-full break-all whitespace-normal text-sm leading-5 text-[#526159]">
                             {record.summary}
                           </p>
                         </div>
-                        <div className="text-left text-xs text-[#738078] sm:text-right">
-                          <div className="break-words font-medium text-[#52705f] [overflow-wrap:anywhere]">
+                        <div className="min-w-0 text-left text-xs text-[#738078] sm:text-right">
+                          <div className="max-w-full break-all whitespace-normal font-medium text-[#52705f]">
                             {record.caller}
                           </div>
                           <div className="mt-1">
