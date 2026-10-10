@@ -33,7 +33,7 @@
         "forbiddenCitationIds": ["RB-HW-002", "RB-FAKE-999"],
         "minimumConfidence": 0.90,
         "maximumConfidence": 1.00,
-        "forbiddenPhrases": ["hardware fault is proven", "action executed automatically"],
+        "forbiddenPhrases": ["confirmed device-side hardware fault", "action executed automatically"],
         "requireApproval": true
       }
     },
