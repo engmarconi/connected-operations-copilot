@@ -55,7 +55,10 @@ public sealed class PgvectorRunbookRetriever : IRunbookRetriever, IAsyncDisposab
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxResults);
 
         await EnsureInitializedAsync(cancellationToken);
-        var embedding = await _embeddingService.EmbedAsync(query, cancellationToken);
+        var embedding = await _embeddingService.EmbedAsync(
+            query,
+            EmbeddingPurpose.Query,
+            cancellationToken);
 
         const string sql = """
             WITH ranked AS (
@@ -137,8 +140,27 @@ public sealed class PgvectorRunbookRetriever : IRunbookRetriever, IAsyncDisposab
                     $"Embedding dimensions must be between 1 and 2000, but were {dimensions}.");
             }
 
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using (var lockCommand = new NpgsqlCommand(
+                "SELECT pg_advisory_xact_lock(16042026);",
+                connection,
+                transaction))
+            {
+                await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // Recreate so switching between feature-hash and model embeddings
+            // cannot leave a mismatched vector dimension in place.
+            await using (var dropCommand = new NpgsqlCommand(
+                "DROP TABLE IF EXISTS runbook_chunks;",
+                connection,
+                transaction))
+            {
+                await dropCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             var createTableSql = $"""
-                CREATE TABLE IF NOT EXISTS runbook_chunks (
+                CREATE TABLE runbook_chunks (
                     document_id text NOT NULL,
                     title text NOT NULL,
                     section text NOT NULL,
@@ -149,26 +171,12 @@ public sealed class PgvectorRunbookRetriever : IRunbookRetriever, IAsyncDisposab
                     PRIMARY KEY (document_id, section)
                 );
                 """;
-            await using (var tableCommand = new NpgsqlCommand(createTableSql, connection))
+            await using (var tableCommand = new NpgsqlCommand(
+                createTableSql,
+                connection,
+                transaction))
             {
                 await tableCommand.ExecuteNonQueryAsync(cancellationToken);
-            }
-
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-            await using (var lockCommand = new NpgsqlCommand(
-                "SELECT pg_advisory_xact_lock(16042026);",
-                connection,
-                transaction))
-            {
-                await lockCommand.ExecuteNonQueryAsync(cancellationToken);
-            }
-
-            await using (var truncateCommand = new NpgsqlCommand(
-                "TRUNCATE TABLE runbook_chunks;",
-                connection,
-                transaction))
-            {
-                await truncateCommand.ExecuteNonQueryAsync(cancellationToken);
             }
 
             foreach (var chunk in _chunks)
@@ -204,7 +212,10 @@ public sealed class PgvectorRunbookRetriever : IRunbookRetriever, IAsyncDisposab
     {
         var keywords = string.Join(' ', chunk.Keywords);
         var embeddingText = $"{chunk.Title}\n{chunk.Section}\n{keywords} {keywords}\n{chunk.Content}";
-        var embedding = await _embeddingService.EmbedAsync(embeddingText, cancellationToken);
+        var embedding = await _embeddingService.EmbedAsync(
+            embeddingText,
+            EmbeddingPurpose.Document,
+            cancellationToken);
 
         const string sql = """
             INSERT INTO runbook_chunks (

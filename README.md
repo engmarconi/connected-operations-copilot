@@ -28,7 +28,7 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 7. The provider proposes an operator notification.
 8. The notification is only simulated after explicit human approval.
 
-The deterministic mock generator remains the default so the demo runs without credentials. An optional Gemini 3.8 Flash provider uses the Interactions API with schema-constrained JSON output. Retrieval supports weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search using deterministic feature-hash embeddings. The feature hashes validate vector storage and retrieval architecture, but they are not presented as model-generated semantic embeddings.
+The deterministic mock generator remains the default so the demo runs without credentials. An optional Gemini 3.8 Flash provider uses the Interactions API with schema-constrained JSON output. Retrieval supports weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search. pgvector defaults to deterministic feature-hash embeddings so the vector path stays credential-free; an optional Gemini Embedding provider can replace those hashes with purpose-aware semantic vectors.
 
 ## Architecture
 
@@ -57,7 +57,8 @@ flowchart LR
 - Versioned Markdown runbook corpus
 - Deterministic ingestion and weighted lexical retrieval
 - Optional PostgreSQL 17 and pgvector retrieval
-- Deterministic 256-dimension feature-hash embeddings
+- Deterministic 256-dimension feature-hash embeddings by default
+- Optional Gemini Embedding semantic vectors behind `ITextEmbeddingService`
 - Mock diagnostic generator with retrieved citations
 - Optional Gemini 3.8 Flash structured-output provider
 - Server-side citation validation and mapping
@@ -71,9 +72,12 @@ Runbooks under `runbooks/` are embedded into the backend at build time. The inge
 `IRunbookRetriever` keeps retrieval independent from diagnosis generation:
 
 - **Local mode** builds an in-memory index and ranks weighted matches across keywords, titles, section names, and content.
-- **pgvector mode** creates the vector extension, synchronizes the embedded corpus transactionally, stores normalized 256-dimension feature hashes, creates an HNSW cosine index, and performs nearest-neighbor retrieval.
+- **pgvector mode** creates the vector extension, synchronizes the embedded corpus transactionally, stores normalized vectors from the configured embedding provider, creates an HNSW cosine index, and performs nearest-neighbor retrieval.
 
-`ITextEmbeddingService` is the replacement boundary for a future embedding model. The current feature hashing is deterministic, offline, and useful for validating the vector pipeline; it does not claim semantic understanding.
+`ITextEmbeddingService` is the embedding boundary used by pgvector retrieval:
+
+- **feature-hash** (default) is deterministic, offline, and useful for validating the vector pipeline without credentials. It does not claim semantic understanding.
+- **gemini** calls `gemini-embedding-001` with purpose-aware task types (`RETRIEVAL_DOCUMENT` for runbook chunks and `RETRIEVAL_QUERY` for incident queries), requests a configurable output size such as 768 dimensions, and L2-normalizes the returned vectors before storage or search.
 
 ## Run locally
 
@@ -124,9 +128,37 @@ $env:ConnectionStrings__Runbooks = "Host=127.0.0.1;Port=54329;Database=connected
 dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
 ```
 
-The database credentials are local demo values from `compose.yaml`. Local retrieval remains the default when these settings are absent.
+The database credentials are local demo values from `compose.yaml`. Local retrieval remains the default when these settings are absent. pgvector defaults to feature-hash embeddings so the vector path still runs without model credentials.
 
-### Run with Gemini
+### Run with Gemini embeddings
+
+With pgvector running, switch the embedding provider to Gemini:
+
+```bash
+export RunbookRetrieval__Mode=pgvector
+export ConnectionStrings__Runbooks='Host=127.0.0.1;Port=54329;Database=connectedops;Username=connectedops;Password=connectedops_dev'
+export Embeddings__Provider=gemini
+export Embeddings__Gemini__ApiKey='your-api-key'
+export Embeddings__Gemini__Model=gemini-embedding-001
+export Embeddings__Gemini__Dimensions=768
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+PowerShell:
+
+```powershell
+$env:RunbookRetrieval__Mode = "pgvector"
+$env:ConnectionStrings__Runbooks = "Host=127.0.0.1;Port=54329;Database=connectedops;Username=connectedops;Password=connectedops_dev"
+$env:Embeddings__Provider = "gemini"
+$env:Embeddings__Gemini__ApiKey = "your-api-key"
+$env:Embeddings__Gemini__Model = "gemini-embedding-001"
+$env:Embeddings__Gemini__Dimensions = "768"
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+If `Embeddings:Gemini:ApiKey` is omitted, the service reuses `Diagnostics:Gemini:ApiKey` when present. Dimensions must stay between 128 and 2000 so the values remain compatible with the pgvector HNSW index. The runbook table is recreated on startup whenever the corpus is synchronized, so switching between feature-hash and Gemini embeddings cannot leave a mismatched vector width behind.
+
+### Run with Gemini diagnostics
 
 Create an API key in Google AI Studio, then configure the backend:
 
@@ -223,6 +255,7 @@ npm run build
 - Model-provided citation keys are validated against server-retrieved evidence.
 - Telemetry message text cannot steer runbook retrieval.
 - Diagnosis is refused when retrieval returns no approved runbook evidence.
+- Semantic embeddings are optional and isolated behind `ITextEmbeddingService`; the default vector path stays offline.
 - Registered operations tools are read-only, bounded, timed, and audited.
 - Gemini tool calls are allowlisted, incident-scoped, stateless, and limited to one round.
 - Proposed actions require explicit approval.
@@ -231,7 +264,6 @@ npm run build
 
 ## Roadmap
 
-- Model-generated semantic embeddings behind `ITextEmbeddingService`
 - Schema-constrained OpenAI provider
 - Additional audited tools for fleet comparison and incident history
 - Broader multi-incident evaluation coverage

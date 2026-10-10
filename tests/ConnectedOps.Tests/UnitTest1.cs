@@ -108,9 +108,11 @@ public sealed class OperationsServiceTests
 
         var first = await service.EmbedAsync(
             "mobile network latency timeout heartbeat",
+            EmbeddingPurpose.Query,
             CancellationToken.None);
         var second = await service.EmbedAsync(
             "mobile network latency timeout heartbeat",
+            EmbeddingPurpose.Query,
             CancellationToken.None);
 
         Assert.Equal(256, first.Length);

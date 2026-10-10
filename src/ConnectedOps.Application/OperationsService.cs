@@ -36,6 +36,12 @@ public interface IRunbookRetriever
         CancellationToken cancellationToken);
 }
 
+public enum EmbeddingPurpose
+{
+    Document,
+    Query
+}
+
 public interface ITextEmbeddingService
 {
     int Dimensions { get; }
@@ -43,6 +49,7 @@ public interface ITextEmbeddingService
 
     Task<float[]> EmbedAsync(
         string text,
+        EmbeddingPurpose purpose,
         CancellationToken cancellationToken);
 }
 

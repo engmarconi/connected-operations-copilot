@@ -46,11 +46,78 @@ public static class DependencyInjection
                 "ConnectionStrings:Runbooks is required when RunbookRetrieval:Mode is 'pgvector'.");
         }
 
-        services.AddSingleton<ITextEmbeddingService, FeatureHashEmbeddingService>();
+        AddEmbeddingService(services, configuration);
         services.AddSingleton<IRunbookRetriever>(provider =>
             new PgvectorRunbookRetriever(
                 connectionString,
                 provider.GetRequiredService<ITextEmbeddingService>()));
+    }
+
+    private static void AddEmbeddingService(
+        IServiceCollection services,
+        IConfiguration? configuration)
+    {
+        var providerName = configuration?["Embeddings:Provider"]?.Trim() ?? "feature-hash";
+        if (providerName.Equals("feature-hash", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ITextEmbeddingService, FeatureHashEmbeddingService>();
+            return;
+        }
+
+        if (!providerName.Equals("gemini", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Unsupported embedding provider '{providerName}'. Use 'feature-hash' or 'gemini'.");
+        }
+
+        var apiKey = configuration?["Embeddings:Gemini:ApiKey"]?.Trim();
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            apiKey = configuration?["Diagnostics:Gemini:ApiKey"]?.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Embeddings:Gemini:ApiKey is required when Embeddings:Provider is 'gemini'.");
+        }
+
+        var model = configuration?["Embeddings:Gemini:Model"]?.Trim();
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = "gemini-embedding-001";
+        }
+
+        var dimensions = 768;
+        var dimensionsValue = configuration?["Embeddings:Gemini:Dimensions"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(dimensionsValue)
+            && (!int.TryParse(dimensionsValue, out dimensions)
+                || dimensions is < 128 or > 2_000))
+        {
+            throw new InvalidOperationException(
+                "Embeddings:Gemini:Dimensions must be an integer between 128 and 2000.");
+        }
+
+        var endpointValue = configuration?["Embeddings:Gemini:Endpoint"]?.Trim()
+            ?? "https://generativelanguage.googleapis.com/v1beta/";
+        if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out var endpoint)
+            || endpoint.Scheme is not "https")
+        {
+            throw new InvalidOperationException(
+                "Embeddings:Gemini:Endpoint must be an absolute HTTPS URL.");
+        }
+
+        if (!endpointValue.EndsWith('/'))
+        {
+            endpoint = new Uri(endpointValue + "/");
+        }
+
+        services.AddSingleton(new GeminiEmbeddingOptions(apiKey, model, dimensions, endpoint));
+        services.AddHttpClient<IGeminiEmbeddingClient, GeminiEmbeddingClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddSingleton<ITextEmbeddingService, GeminiEmbeddingService>();
     }
 
     private static void AddDiagnosticProvider(

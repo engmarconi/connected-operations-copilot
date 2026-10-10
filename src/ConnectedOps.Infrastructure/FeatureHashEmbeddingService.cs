@@ -13,8 +13,10 @@ public sealed partial class FeatureHashEmbeddingService : ITextEmbeddingService
 
     public Task<float[]> EmbedAsync(
         string text,
+        EmbeddingPurpose purpose,
         CancellationToken cancellationToken)
     {
+        _ = purpose;
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
