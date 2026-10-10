@@ -2,7 +2,7 @@ name: connected-operations-copilot
 
 services:
   pgvector:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.7-pg17
     environment:
       POSTGRES_DB: connectedops
       POSTGRES_USER: connectedops

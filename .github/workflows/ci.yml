@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       pgvector:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:0.8.7-pg17
         env:
           POSTGRES_DB: connectedops_test
           POSTGRES_USER: connectedops
