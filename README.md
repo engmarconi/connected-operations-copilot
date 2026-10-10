@@ -65,6 +65,7 @@ flowchart LR
 - Server-side citation validation and mapping
 - Versioned offline evaluation dataset and scoring CLI
 - Schema-validated read-only tool registry with telemetry, fleet comparison, and incident history tools
+- OpenTelemetry traces and metrics with JSON structured console logs
 
 ## Retrieval pipeline
 
@@ -104,6 +105,30 @@ npm run dev -- --hostname 0.0.0.0 --port 43123
 ```
 
 Open <http://127.0.0.1:43123>.
+
+### Observability
+
+The API emits:
+
+- JSON structured console logs for diagnosis, approval, and reset events
+- OpenTelemetry traces for ASP.NET Core requests, outbound HTTP calls, offline scenarios, approvals, and tool executions
+- OpenTelemetry metrics for offline scenarios, completed/failed diagnoses, approvals, and tool executions
+
+In Development, console exporters are enabled by default. To export to an OTLP collector:
+
+```bash
+export OpenTelemetry__Otlp__Endpoint=http://127.0.0.1:4318
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+PowerShell:
+
+```powershell
+$env:OpenTelemetry__Otlp__Endpoint = "http://127.0.0.1:4318"
+dotnet run --project src/ConnectedOps.Api --urls http://127.0.0.1:5080
+```
+
+`/health` reports the service name plus the custom activity source and meter names. Health checks themselves are excluded from ASP.NET Core request traces to reduce noise.
 
 ### Run with pgvector
 
@@ -316,10 +341,10 @@ npm run build
 - Proposed actions require explicit approval.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
+- Operational traces, metrics, and structured logs are emitted without capturing raw telemetry payloads or model prompts.
 
 ## Roadmap
 
-- OpenTelemetry traces, metrics, and structured logs
 - Authentication and role-based approvals
 
 ## License

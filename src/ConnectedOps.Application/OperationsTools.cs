@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace ConnectedOps.Application;
@@ -109,8 +110,18 @@ public sealed class OperationsToolService
         string caller,
         CancellationToken cancellationToken)
     {
+        using var activity = OperationsTelemetry.ActivitySource.StartActivity(
+            "operations.tool_execute");
+        activity?.SetTag("tool.name", toolName);
+        activity?.SetTag("tool.caller", caller);
+        OperationsTelemetry.ToolExecutions.Add(
+            1,
+            new KeyValuePair<string, object?>("tool.name", toolName),
+            new KeyValuePair<string, object?>("tool.caller", caller));
+
         if (string.IsNullOrWhiteSpace(caller) || caller.Length > 100)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, "invalid caller");
             throw new OperationsToolException(
                 OperationsToolErrorKind.InvalidArguments,
                 "Tool caller must be between 1 and 100 characters.");
@@ -128,6 +139,7 @@ public sealed class OperationsToolService
                 startedTimestamp,
                 succeeded: false,
                 message);
+            activity?.SetStatus(ActivityStatusCode.Error, message);
             throw new OperationsToolException(
                 OperationsToolErrorKind.NotFound,
                 message);
@@ -149,6 +161,7 @@ public sealed class OperationsToolService
                 startedTimestamp,
                 succeeded: true,
                 auditSummary);
+            activity?.SetTag("tool.succeeded", true);
             return new OperationsToolResult(
                 toolName,
                 output,
@@ -164,6 +177,7 @@ public sealed class OperationsToolService
                 startedTimestamp,
                 succeeded: false,
                 "Tool execution exceeded its read-only timeout.");
+            activity?.SetStatus(ActivityStatusCode.Error, "timed out");
             throw new OperationsToolException(
                 OperationsToolErrorKind.TimedOut,
                 $"Read-only tool '{toolName}' timed out.",
@@ -178,6 +192,7 @@ public sealed class OperationsToolService
                 startedTimestamp,
                 succeeded: false,
                 exception.Message);
+            activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
             throw;
         }
         catch (Exception exception)
@@ -189,6 +204,7 @@ public sealed class OperationsToolService
                 startedTimestamp,
                 succeeded: false,
                 "Tool execution failed safely.");
+            activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
             throw new OperationsToolException(
                 OperationsToolErrorKind.ExecutionFailed,
                 $"Read-only tool '{toolName}' failed safely.",

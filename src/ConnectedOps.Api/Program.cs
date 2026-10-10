@@ -1,9 +1,11 @@
 using System.Text.Json.Serialization;
+using ConnectedOps.Api;
 using ConnectedOps.Application;
 using ConnectedOps.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddConnectedOperationsObservability();
 builder.Services.AddConnectedOperations(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -29,8 +31,13 @@ app.UseCors();
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
-    service = "connected-operations-api",
-    timestamp = DateTimeOffset.UtcNow
+    service = OperationsTelemetry.ServiceName,
+    timestamp = DateTimeOffset.UtcNow,
+    telemetry = new
+    {
+        activitySource = OperationsTelemetry.ActivitySourceName,
+        meter = OperationsTelemetry.MeterName
+    }
 }));
 
 var operations = app.MapGroup("/api");
