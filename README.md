@@ -60,6 +60,7 @@ flowchart LR
 - Optional Gemini 3.8 Flash structured-output provider
 - Server-side citation validation and mapping
 - Versioned offline evaluation dataset and scoring CLI
+- Schema-validated read-only tool registry with audit records
 
 ## Retrieval pipeline
 
@@ -147,6 +148,38 @@ The Gemini provider uses `store: false` and requests JSON constrained by an expl
 
 There is no silent runtime fallback from Gemini to mock output: provider failures return a safe `502` response so operators can distinguish model failure from a real diagnosis. Remove the Gemini settings or select `mock` to use the credential-free provider.
 
+## Read-only operations tools
+
+The first tool, `recent-asset-telemetry`, returns at most 20 recent synthetic events for one asset. The generic registry rejects unknown arguments, enforces a two-second timeout, accepts read-only tools only, and records success or failure without storing telemetry payloads in the audit summary.
+
+Discover available tools:
+
+```bash
+curl http://127.0.0.1:5080/api/tools
+```
+
+After running the offline scenario, retrieve two events:
+
+```bash
+curl -X POST http://127.0.0.1:5080/api/tools/recent-asset-telemetry \
+  -H "Content-Type: application/json" \
+  -d '{
+    "arguments": {
+      "assetId": "11111111-1111-1111-1111-111111111111",
+      "limit": 2
+    },
+    "caller": "operator-demo"
+  }'
+```
+
+Inspect the bounded audit trail:
+
+```bash
+curl "http://127.0.0.1:5080/api/tools/audit?limit=20"
+```
+
+This step establishes and tests the safe execution boundary. Gemini does not call tools yet; model function calling remains a separate roadmap stage.
+
 ## Evaluations
 
 The versioned dataset in `evals/cases.json` covers a full network outage, degraded reporting without a confirmed outage, and prompt injection embedded in telemetry. Each result is scored for:
@@ -182,6 +215,7 @@ npm run build
 - The diagnostic provider has no direct database or device access.
 - Diagnosis citations are created from retrieved, versioned runbook sections.
 - Model-provided citation keys are validated against server-retrieved evidence.
+- Registered operations tools are read-only, bounded, timed, and audited.
 - Proposed actions require explicit approval.
 - Actions are simulated and auditable.
 - The application runs without model credentials.
@@ -190,7 +224,7 @@ npm run build
 
 - Model-generated semantic embeddings behind `ITextEmbeddingService`
 - Schema-constrained OpenAI provider
-- Read-only tool calling
+- Gemini function calling through the audited read-only registry
 - Prompt-injection and missing-evidence tests
 - Broader multi-incident evaluation coverage
 - OpenTelemetry traces, metrics, and structured logs

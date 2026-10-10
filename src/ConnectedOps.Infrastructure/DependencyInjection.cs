@@ -12,6 +12,9 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IOperationsStore, InMemoryOperationsStore>();
+        services.AddSingleton<IToolAuditStore, InMemoryToolAuditStore>();
+        services.AddSingleton<IReadOnlyOperationsTool, RecentAssetTelemetryTool>();
+        services.AddSingleton<OperationsToolService>();
         AddRunbookRetrieval(services, configuration);
         AddDiagnosticProvider(services, configuration);
         services.AddSingleton<OperationsService>();
