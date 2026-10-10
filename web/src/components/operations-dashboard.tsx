@@ -104,6 +104,27 @@ function timeLabel(value: string) {
   }).format(new Date(value));
 }
 
+function providerLabel(provider?: string) {
+  if (!provider) {
+    return "Retrieved evidence · validated citations";
+  }
+
+  if (provider.startsWith("gemini/")) {
+    const model = provider.split("/")[1] ?? "gemini";
+    const displayModel = model
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+    return `${displayModel} · validated citations`;
+  }
+
+  if (provider.startsWith("mock-generator/")) {
+    return "Mock provider · cited runbooks";
+  }
+
+  return "Evidence provider · validated citations";
+}
+
 function statusBadge(health: HealthState) {
   if (health === "Offline") {
     return (
@@ -199,7 +220,12 @@ export function OperationsDashboard() {
     try {
       const response = await action();
       if (!response.ok) {
-        throw new Error("The requested operation was not completed.");
+        const problem = (await response.json().catch(() => null)) as {
+          detail?: string;
+        } | null;
+        throw new Error(
+          problem?.detail ?? "The requested operation was not completed.",
+        );
       }
       setDashboard(await fetchDashboard());
     } catch (actionError) {
@@ -357,7 +383,7 @@ export function OperationsDashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm text-[#456039]">
-                  Mock provider · cited runbooks
+                  {providerLabel(primaryIncident?.diagnosis?.provider)}
                 </CardContent>
               </Card>
             </section>
