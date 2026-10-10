@@ -10,8 +10,6 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 
 ## See it in action
 
-## See it in action
-
 ![Connected Operations Copilot with role-based approval after evidence-backed diagnosis](docs/assets/role-based-approval.png)
 
 ## Five-minute demo
@@ -22,6 +20,8 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 4. Review the retrieved runbook citations and proposed notification.
 5. Click **Approve notification** — only the Approver role can do this.
 6. Sign out and sign in as `operator` / `operate-demo` to confirm approval is blocked.
+
+For exact Operator vs Approver API expectations (`401` / `403` / `200`), see the [interviewer demo script](docs/demo-script.md).
 
 ## Working vertical slice
 
@@ -42,6 +42,8 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 The deterministic mock generator remains the default so the demo runs without credentials. Optional Gemini 3.8 Flash and OpenAI providers return schema-constrained JSON diagnoses with the same server-side citation validation and approval gate. Retrieval supports weighted local lexical ranking (the default), or PostgreSQL/pgvector similarity search. pgvector defaults to deterministic feature-hash embeddings so the vector path stays credential-free; an optional Gemini Embedding provider can replace those hashes with purpose-aware semantic vectors.
 
 ## Architecture
+
+Short walkthrough of the control-plane boundaries: [Architecture notes](docs/architecture.md).
 
 ```mermaid
 flowchart LR
