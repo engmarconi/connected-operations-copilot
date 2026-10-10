@@ -80,12 +80,13 @@ public sealed class RecentAssetTelemetryTool(IOperationsStore store)
         }
 
         var properties = arguments.EnumerateObject().ToArray();
-        var unknownArgument = properties.FirstOrDefault(
-            property => !AllowedArguments.Contains(property.Name));
-        if (unknownArgument.Name is not null)
+        var unknownArgument = properties
+            .Select(property => property.Name)
+            .FirstOrDefault(name => !AllowedArguments.Contains(name));
+        if (unknownArgument is not null)
         {
             throw InvalidArguments(
-                $"Unknown tool argument '{unknownArgument.Name}'.");
+                $"Unknown tool argument '{unknownArgument}'.");
         }
 
         if (!arguments.TryGetProperty("assetId", out var assetIdValue)
