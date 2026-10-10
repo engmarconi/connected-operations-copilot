@@ -72,7 +72,7 @@ public sealed class InMemoryOperationsStore : IOperationsStore
         lock (_gate)
         {
             var existing = _incidents.FirstOrDefault(
-                incident => incident.AssetId == assetId && incident.Status is IncidentStatus.Open);
+                incident => incident.AssetId == assetId);
             if (existing is not null)
             {
                 return existing;

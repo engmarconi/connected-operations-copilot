@@ -64,6 +64,8 @@ public sealed class OperationsService(
     IDiagnosticService diagnosticService,
     TimeProvider timeProvider)
 {
+    private readonly SemaphoreSlim _scenarioGate = new(1, 1);
+
     public DashboardSnapshot GetDashboard()
     {
         var assets = store.GetAssets();
@@ -87,19 +89,32 @@ public sealed class OperationsService(
         Guid assetId,
         CancellationToken cancellationToken)
     {
-        var asset = store.GetAsset(assetId)
-            ?? throw new KeyNotFoundException($"Asset '{assetId}' was not found.");
+        await _scenarioGate.WaitAsync(cancellationToken);
+        try
+        {
+            var asset = store.GetAsset(assetId)
+                ?? throw new KeyNotFoundException($"Asset '{assetId}' was not found.");
 
-        var incident = store.CreateOfflineIncident(assetId, timeProvider.GetUtcNow());
-        var events = store.GetEvents(assetId);
-        var (analysis, action) = await diagnosticService.AnalyzeAsync(
-            incident,
-            asset,
-            events,
-            cancellationToken);
+            var incident = store.CreateOfflineIncident(assetId, timeProvider.GetUtcNow());
+            if (incident.Diagnosis is not null)
+            {
+                return incident;
+            }
 
-        incident.AddDiagnosis(analysis, action);
-        return incident;
+            var events = store.GetEvents(assetId);
+            var (analysis, action) = await diagnosticService.AnalyzeAsync(
+                incident,
+                asset,
+                events,
+                cancellationToken);
+
+            incident.AddDiagnosis(analysis, action);
+            return incident;
+        }
+        finally
+        {
+            _scenarioGate.Release();
+        }
     }
 
     public Incident ApproveNotification(Guid incidentId, string approvedBy)

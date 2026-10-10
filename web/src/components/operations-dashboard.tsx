@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -125,6 +125,18 @@ function providerLabel(provider?: string) {
   return "Evidence provider · validated citations";
 }
 
+function providerFooterLabel(provider?: string) {
+  if (provider?.startsWith("gemini/")) {
+    return "Gemini AI provider";
+  }
+
+  if (provider?.startsWith("mock-generator/")) {
+    return "Mock AI provider";
+  }
+
+  return "Configured diagnostic provider";
+}
+
 function statusBadge(health: HealthState) {
   if (health === "Offline") {
     return (
@@ -173,6 +185,7 @@ export function OperationsDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isActing, setIsActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const actionInFlight = useRef(false);
 
   const fetchDashboard = useCallback(async () => {
     const response = await fetch(`${API_URL}/operations/dashboard`, {
@@ -215,6 +228,8 @@ export function OperationsDashboard() {
   );
 
   async function runAction(action: () => Promise<Response>) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setIsActing(true);
     setError(null);
     try {
@@ -235,6 +250,7 @@ export function OperationsDashboard() {
           : "The requested operation was not completed.",
       );
     } finally {
+      actionInFlight.current = false;
       setIsActing(false);
     }
   }
@@ -580,7 +596,7 @@ export function OperationsDashboard() {
                     </h2>
                     <p className="mt-2 text-sm leading-6 text-[#617067]">
                       Run the offline scenario to generate synthetic telemetry,
-                      open an incident and request a cited mock diagnosis.
+                      open an incident and request a cited diagnosis.
                     </p>
                     <Button
                       className="mt-5 bg-[#173f2e] text-white hover:bg-[#102a20]"
@@ -597,8 +613,8 @@ export function OperationsDashboard() {
 
             <div className="flex flex-col gap-2 border-t border-black/5 pt-4 text-xs text-[#738078] sm:flex-row sm:items-center sm:justify-between">
               <span>
-                Synthetic data only · No autonomous write actions · Mock AI
-                provider
+                Synthetic data only · No autonomous write actions ·{" "}
+                {providerFooterLabel(primaryIncident?.diagnosis?.provider)}
               </span>
               <span>Snapshot {timeLabel(dashboard.generatedAt)}</span>
             </div>

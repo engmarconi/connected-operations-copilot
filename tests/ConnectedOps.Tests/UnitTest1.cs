@@ -146,6 +146,27 @@ public sealed class OperationsServiceTests
         Assert.Contains(chunks, chunk => chunk.DocumentId is "RB-APP-003");
     }
 
+    [Fact]
+    public async Task Concurrent_scenario_requests_share_one_diagnosis()
+    {
+        var timeProvider = new StubTimeProvider(
+            new DateTimeOffset(2026, 10, 9, 19, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryOperationsStore(timeProvider);
+        var diagnosticService = new CountingDiagnosticService(
+            new MockDiagnosticService(
+                new LocalRunbookRetriever(),
+                timeProvider));
+        var service = new OperationsService(store, diagnosticService, timeProvider);
+
+        var incidents = await Task.WhenAll(
+            service.RunOfflineScenarioAsync(VehicleId, CancellationToken.None),
+            service.RunOfflineScenarioAsync(VehicleId, CancellationToken.None));
+
+        Assert.Equal(incidents[0].Id, incidents[1].Id);
+        Assert.Equal(1, diagnosticService.CallCount);
+        Assert.Single(service.GetDashboard().Incidents);
+    }
+
     private static OperationsService CreateService()
     {
         var timeProvider = new StubTimeProvider(
@@ -176,6 +197,29 @@ public sealed class OperationsServiceTests
                     ["test"])
             ];
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class CountingDiagnosticService(IDiagnosticService inner)
+        : IDiagnosticService
+    {
+        private int _callCount;
+
+        public int CallCount => _callCount;
+
+        public async Task<(DiagnosticAnalysis Analysis, ProposedAction Action)> AnalyzeAsync(
+            Incident incident,
+            ConnectedAsset asset,
+            IReadOnlyList<TelemetryEvent> events,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _callCount);
+            await Task.Delay(25, cancellationToken);
+            return await inner.AnalyzeAsync(
+                incident,
+                asset,
+                events,
+                cancellationToken);
         }
     }
 
