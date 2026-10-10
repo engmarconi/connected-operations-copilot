@@ -10,7 +10,18 @@ The repository uses synthetic data only. It contains no DrivoX, McShippers, iSma
 
 ## See it in action
 
-![Connected Operations Copilot showing audited read-only tool activity, retrieved runbook evidence, and a human approval gate](docs/assets/read-only-tool-activity.png)
+## See it in action
+
+![Connected Operations Copilot with role-based approval after evidence-backed diagnosis](docs/assets/role-based-approval.png)
+
+## Five-minute demo
+
+1. Start the API and dashboard (commands below).
+2. Sign in as `admin` / `admin-demo`.
+3. Click **Run offline scenario**.
+4. Review the retrieved runbook citations and proposed notification.
+5. Click **Approve notification** — only the Approver role can do this.
+6. Sign out and sign in as `operator` / `operate-demo` to confirm approval is blocked.
 
 ## Working vertical slice
 
