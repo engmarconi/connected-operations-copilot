@@ -132,6 +132,8 @@ type AuthSession = {
 };
 
 const authListeners = new Set<() => void>();
+let cachedAuthRaw: string | null = null;
+let cachedAuthSession: AuthSession | null = null;
 
 function emitAuthChange() {
   for (const listener of authListeners) {
@@ -150,24 +152,47 @@ function readStoredAuth(): AuthSession | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const session = JSON.parse(raw) as AuthSession;
-    if (!session.accessToken || !session.user?.username) return null;
-    if (Date.parse(session.expiresAt) <= Date.now()) {
-      window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    if (raw === cachedAuthRaw) {
+      return cachedAuthSession;
+    }
+
+    cachedAuthRaw = raw;
+    if (!raw) {
+      cachedAuthSession = null;
       return null;
     }
-    return session;
+
+    const session = JSON.parse(raw) as AuthSession;
+    if (
+      !session.accessToken ||
+      !session.user?.username ||
+      Date.parse(session.expiresAt) <= Date.now()
+    ) {
+      window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      cachedAuthRaw = null;
+      cachedAuthSession = null;
+      return null;
+    }
+
+    cachedAuthSession = session;
+    return cachedAuthSession;
   } catch {
+    cachedAuthRaw = null;
+    cachedAuthSession = null;
     return null;
   }
 }
 
 function writeStoredAuth(session: AuthSession | null) {
   if (session) {
-    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+    const raw = JSON.stringify(session);
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, raw);
+    cachedAuthRaw = raw;
+    cachedAuthSession = session;
   } else {
     window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    cachedAuthRaw = null;
+    cachedAuthSession = null;
   }
   emitAuthChange();
 }
